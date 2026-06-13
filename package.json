@@ -1,0 +1,33 @@
+{
+  "name": "mournvale",
+  "version": "1.0.0",
+  "description": "A multiplayer text-based MUD engine built in Node.js.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aburdine-softwaredeveloper/Mournvale.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/aburdine-softwaredeveloper/Mournvale/issues"
+  },
+  "homepage": "https://github.com/aburdine-softwaredeveloper/Mournvale#readme",
+  "dependencies": {
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "@types/ws": "^8.18.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}
