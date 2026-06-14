@@ -18,3 +18,5 @@ server.on("connection", (socket: WebSocket) => {
 });
 
 console.log("Mournvale running on ws://localhost:3000");
+console.log("Mournvale reload test");
+console.log("Hot reload");
