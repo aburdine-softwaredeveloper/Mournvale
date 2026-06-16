@@ -1,13 +1,13 @@
-import { players, rooms } from "../gameState";
+import { rooms, getPlayerById } from "../gameState";
 
 export function move(playerId: string, direction: string): string {
-  const player = players[playerId];
+  const player = getPlayerById(playerId);
   if (!player) return "Player not found.";
 
   const room = rooms[player.roomId];
   if (!room) return "You are nowhere.";
 
-  const nextRoomId = room.exits[direction as keyof typeof room.exits];
+  const nextRoomId = room.exits[direction];
 
   if (!nextRoomId) {
     return "You can't go that way.";
@@ -21,5 +21,9 @@ export function move(playerId: string, direction: string): string {
 
   player.roomId = nextRoomId;
 
-  return `\n➡️ You move ${direction}...\n\n📍 ${nextRoom.name}\n\n${nextRoom.description}`;
+  return `➡️ You move ${direction}...
+
+📍 ${nextRoom.name}
+
+${nextRoom.description}`;
 }

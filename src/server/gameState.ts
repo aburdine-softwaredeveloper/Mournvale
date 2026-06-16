@@ -1,7 +1,12 @@
+import { WebSocket } from "ws";
+
 export type Player = {
+
   id: string;
   name: string;
+  socket: WebSocket;
   roomId: string;
+
 };
 
 export type Room = {
@@ -35,4 +40,11 @@ export const rooms: Record<string, Room> = {
   }
 };
 
-export const players: Record<string, Player> = {};
+export const players = new Map<WebSocket, Player>();
+
+export function getPlayerById(playerId: string) {
+  for (const player of players.values()) {
+    if (player.id === playerId) return player;
+  }
+  return undefined;
+}

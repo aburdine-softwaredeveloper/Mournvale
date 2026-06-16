@@ -8,12 +8,12 @@ export function handleCommand(playerId: string, input: string): string {
   if (!trimmed) return "";
 
   const parts = trimmed.split(" ");
-  const command = parts[0];
+  const command = parts[0]?.toLowerCase();
   const args = parts.slice(1);
 
   if (!command) return "No command entered.";
 
-  switch (command.toLowerCase()) {
+  switch (command) {
     case "look":
       return look(playerId);
 
@@ -27,7 +27,7 @@ export function handleCommand(playerId: string, input: string): string {
     case "south":
     case "east":
     case "west":
-      return move(playerId, command.toLowerCase());
+      return move(playerId, command);
 
     default:
       return "Unknown command. Try 'help'.";

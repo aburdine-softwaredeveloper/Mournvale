@@ -2,70 +2,66 @@ import { WebSocketServer, WebSocket, RawData } from "ws";
 import { randomUUID } from "crypto";
 import { handleCommand } from "./commands";
 import { broadcastToRoom } from "./roomUtils";
-
-type Player = {
-  id: string;
-  name: string;
-  socket: WebSocket;
-  roomId: string;
-};
-
-const players = new Map<WebSocket, Player>();
+import { players, Player } from "./gameState";
 
 const server = new WebSocketServer({ port: 3000 });
 
 server.on("connection", (socket: WebSocket) => {
-  // 🧍 Create player session
+  // 🧍 Create player (runtime object)
   const player: Player = {
     id: randomUUID(),
     name: `Adventurer-${Math.floor(Math.random() * 9999)}`,
-    socket,
+    socket, // ✅ REQUIRED (you were missing this earlier)
     roomId: "tavern"
   };
 
+  // store in global state (single source of truth)
   players.set(socket, player);
 
   // 👋 Welcome flow
   socket.send("Welcome to Mournvale.");
+
+  // initial room description
   socket.send(handleCommand(player.id, "look"));
 
-  // 🌍 ENTER ROOM EVENT (correct place)
+  // 🌍 enter room broadcast
   broadcastToRoom(
     player.roomId,
     `👋 ${player.name} enters the room.`,
     player.id
   );
 
-  // 💬 MESSAGE HANDLER (commands only)
+  // 💬 message handler (commands only)
   socket.on("message", (msg: RawData) => {
     const text = msg.toString().trim();
 
-    const player = players.get(socket);
+    // ⚠️ IMPORTANT: DO NOT shadow outer `player`
+    const currentPlayer = players.get(socket);
 
-    if (!player) return;
+    if (!currentPlayer) return;
 
-    console.log(`[${player.name}]`, text);
+    console.log(`[${currentPlayer.name}]`, text);
 
-    const response = handleCommand(player.id, text);
+    const response = handleCommand(currentPlayer.id, text);
 
     if (socket.readyState === WebSocket.OPEN) {
       socket.send(response);
     }
   });
 
-  // 🚪 DISCONNECT EVENT
+  // 🚪 disconnect handler
   socket.on("close", () => {
-    const player = players.get(socket);
+    const currentPlayer = players.get(socket);
 
-    if (player) {
+    if (currentPlayer) {
       broadcastToRoom(
-        player.roomId,
-        `🚪 ${player.name} leaves the room.`,
-        player.id
+        currentPlayer.roomId,
+        `🚪 ${currentPlayer.name} leaves the room.`,
+        currentPlayer.id
       );
-    }
 
-    players.delete(socket);
+      players.delete(socket);
+    }
   });
 });
 
