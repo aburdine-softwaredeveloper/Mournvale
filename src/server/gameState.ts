@@ -8,7 +8,7 @@ export type Room = {
   id: string;
   name: string;
   description: string;
-  exits: Partial<Record<Direction, string>>;
+  exits: Record<string, string>;
 };
 
 export type Direction = "north" | "south" | "east" | "west";
