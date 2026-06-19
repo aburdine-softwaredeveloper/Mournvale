@@ -16,10 +16,36 @@
 <body>
 
   <!-- ═══════════════════════════════════════
+       MAIN MENU SCREEN
+       New Game / Load Game + 5-slot picker
+  ════════════════════════════════════════ -->
+  <div id="screen-menu" class="screen screen-active">
+    <div id="menu-content">
+
+      <div id="menu-title">MOURNVALE</div>
+      <div id="menu-subtitle">▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔</div>
+
+      <!-- Root choice: New Game / Load Game -->
+      <div id="menu-root-buttons" class="menu-buttons">
+        <button id="menu-new-game" class="snes-btn menu-big-btn">NEW GAME</button>
+        <button id="menu-load-game" class="snes-btn menu-big-btn">LOAD GAME</button>
+      </div>
+
+      <!-- Slot picker (hidden until a mode is chosen) -->
+      <div id="menu-slot-panel" class="snes-panel hidden">
+        <div id="menu-slot-title" class="panel-title">CHOOSE A SLOT</div>
+        <div id="menu-slot-list" class="slot-list-container"></div>
+        <button id="menu-back-btn" class="snes-btn menu-back">◄ BACK</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
        INTRO SCREEN
        Full-screen cinematic before character creation
   ════════════════════════════════════════ -->
-  <div id="screen-intro" class="screen screen-active">
+  <div id="screen-intro" class="screen hidden">
     <div id="intro-content">
       <div id="intro-header" class="hidden"></div>
       <div id="intro-text"></div>

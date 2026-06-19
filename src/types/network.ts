@@ -80,6 +80,31 @@ export interface PlayerPresenceMessage {
   };
 }
 
+/**
+ * Sends the list of save slots to the client for the load-game menu.
+ * Sent in response to a `request_slots` message.
+ */
+export interface SlotListMessage {
+  type: "slot_list";
+  payload: {
+    slots: SaveSlotSummary[];
+  };
+}
+
+/**
+ * Confirms a save just completed (e.g. on disconnect-save we don't send
+ * this, but an explicit save command gets an ack). Carries the updated
+ * slot summary so the client can refresh its menu if showing.
+ */
+export interface SaveResultMessage {
+  type: "save_result";
+  payload: {
+    success: boolean;
+    slot: number;
+    message: string;
+  };
+}
+
 // ─────────────────────────────────────────────
 // CLIENT → SERVER MESSAGES
 // ─────────────────────────────────────────────
@@ -88,6 +113,51 @@ export interface PlayerPresenceMessage {
 export interface IntroCompleteMessage {
   type: "intro_complete";
   payload: Record<string, never>;
+}
+
+/**
+ * First message a client sends on connect — identifies the persistent
+ * player so the server can scope save slots to them. The playerId is
+ * generated client-side and stored in localStorage.
+ */
+export interface IdentifyMessage {
+  type: "identify";
+  payload: {
+    playerId: string;
+  };
+}
+
+/** Requests the current save-slot summaries (for the load-game menu) */
+export interface RequestSlotsMessage {
+  type: "request_slots";
+  payload: Record<string, never>;
+}
+
+/**
+ * Player chose "New Game" in a given slot. The slot is remembered so
+ * that when the character is created (or on disconnect) we save there.
+ */
+export interface NewGameMessage {
+  type: "new_game";
+  payload: {
+    slot: number;
+  };
+}
+
+/** Player chose "Load Game" from a given slot */
+export interface LoadGameMessage {
+  type: "load_game";
+  payload: {
+    slot: number;
+  };
+}
+
+/** Explicit request to delete a save slot */
+export interface DeleteSlotMessage {
+  type: "delete_slot";
+  payload: {
+    slot: number;
+  };
 }
 
 /** Player's response to a dialogue choice during character creation */
@@ -117,7 +187,7 @@ export interface CommandMessage {
 // SHARED ENUMS & SUPPORTING TYPES
 // ─────────────────────────────────────────────
 
-export type PlayerState = "pending" | "character_creation" | "active";
+export type PlayerState = "menu" | "pending" | "character_creation" | "active";
 
 export type CharacterCreationStep =
   | "name"
@@ -145,6 +215,21 @@ export interface DialogueChoice {
 }
 
 /**
+ * A lightweight summary of one save slot, sent to the client to render
+ * the load-game menu. Mirrors the server's SaveSlotSummary but lives
+ * here so the client never imports server code. Empty slots have
+ * occupied: false and omit the detail fields.
+ */
+export interface SaveSlotSummary {
+  slot: number;
+  occupied: boolean;
+  characterName?: string;
+  characterClass?: string;
+  roomName?: string;
+  savedAt?: number;
+}
+
+/**
  * CharacterDraft — partial character data accumulated during creation.
  * All fields optional because they are filled in step by step.
  */
@@ -169,10 +254,17 @@ export type ServerMessage =
   | DialogueMessage
   | StateTransitionMessage
   | CharacterConfirmedMessage
-  | PlayerPresenceMessage;
+  | PlayerPresenceMessage
+  | SlotListMessage
+  | SaveResultMessage;
 
 /** Every message the client can send to the server */
 export type ClientMessage =
+  | IdentifyMessage
+  | RequestSlotsMessage
+  | NewGameMessage
+  | LoadGameMessage
+  | DeleteSlotMessage
   | IntroCompleteMessage
   | DialogueChoiceMessage
   | CharacterCreateMessage

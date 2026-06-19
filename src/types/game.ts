@@ -46,6 +46,23 @@ export interface Player {
   socket: WebSocket;
   state: PlayerState;
 
+  /**
+   * Persistent player identity, supplied by the client on connect via
+   * the `identify` message. Used to scope save slots. Distinct from
+   * `id`, which is a fresh per-session/per-socket identity. Two tabs
+   * from the same browser share a playerId but have different ids.
+   *
+   * Undefined only in the brief window between connect and identify.
+   */
+  playerId?: string;
+
+  /**
+   * The save slot (1–5) this session is bound to. Set when the player
+   * picks "New Game" or "Load Game" in a slot. Auto-save on disconnect
+   * writes here. Undefined until a slot is chosen.
+   */
+  activeSlot?: number;
+
   /** Temporary display name used before character name is set */
   tempName: string;
 

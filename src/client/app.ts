@@ -19,6 +19,7 @@
  */
 
 import { ScreenManager } from "./screens/ScreenManager";
+import { MainMenuScreen } from "./screens/MainMenuScreen";
 import { IntroScreen } from "./screens/IntroScreen";
 import { CharacterCreationScreen } from "./screens/CharacterCreationScreen";
 import { GameScreen } from "./screens/GameScreen";
@@ -30,10 +31,14 @@ import type {
 
 const SERVER_URL = "ws://localhost:3000";
 
+/** localStorage key under which we persist the player's stable identity */
+const PLAYER_ID_KEY = "mournvale.playerId";
+
 class MournvaleClient {
   private socket: WebSocket | null = null;
 
   private readonly screens = new ScreenManager();
+  private readonly menu = new MainMenuScreen();
   private readonly intro = new IntroScreen();
   private readonly creation = new CharacterCreationScreen();
   private readonly game = new GameScreen();
@@ -41,21 +46,63 @@ class MournvaleClient {
   /** Buffers character draft locally for the final character_create send */
   private draft: Record<string, string> = {};
 
+  /** This browser's persistent player identity (from localStorage) */
+  private playerId: string = "";
+
   public start(): void {
-    // Begin on the intro screen immediately — no socket needed to watch it
-    this.screens.show("intro");
+    // Establish a persistent player identity for this browser
+    this.playerId = this.loadOrCreatePlayerId();
+
+    // Begin on the main menu
+    this.screens.show("menu");
 
     this.connect();
 
-    // Start the cinematic. When done, tell the server we're ready.
-    this.intro.start(() => {
-      this.send({ type: "intro_complete", payload: {} });
+    // Wire the menu's New Game / Load Game / Delete handlers
+    this.menu.setHandlers({
+      onNewGame: (slot) => this.send({ type: "new_game", payload: { slot } }),
+      onLoadGame: (slot) => this.send({ type: "load_game", payload: { slot } }),
+      onDeleteSlot: (slot) =>
+        this.send({ type: "delete_slot", payload: { slot } }),
     });
 
     // Wire the creation screen's choice handler
     this.creation.setChoiceHandler((step, value) => {
       this.handleCreationChoice(step, value);
     });
+  }
+
+  /**
+   * Reads the persistent playerId from localStorage, generating and
+   * storing a fresh one on first visit. This ID scopes the player's
+   * save slots on the server.
+   */
+  private loadOrCreatePlayerId(): string {
+    try {
+      const existing = window.localStorage.getItem(PLAYER_ID_KEY);
+      if (existing && existing.length >= 8) return existing;
+
+      const generated = this.generateId();
+      window.localStorage.setItem(PLAYER_ID_KEY, generated);
+      return generated;
+    } catch {
+      // localStorage unavailable (private mode, etc.) — fall back to a
+      // session-only id. Saves won't persist across reloads in this case.
+      return this.generateId();
+    }
+  }
+
+  /** Generates a random identifier (crypto.randomUUID when available) */
+  private generateId(): string {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+      return crypto.randomUUID();
+    }
+    // Fallback for older browsers
+    return (
+      "p-" +
+      Math.random().toString(36).slice(2) +
+      Date.now().toString(36)
+    );
   }
 
   // ─────────────────────────────────────────────
@@ -67,6 +114,8 @@ class MournvaleClient {
 
     this.socket.addEventListener("open", () => {
       console.log("[net] connected");
+      // Identify ourselves so the server can scope our save slots
+      this.send({ type: "identify", payload: { playerId: this.playerId } });
     });
 
     this.socket.addEventListener("message", (event) => {
@@ -140,6 +189,16 @@ class MournvaleClient {
         this.game.log(`${msg.payload.playerName} ${verb} the room.`, "presence");
         break;
       }
+
+      case "slot_list":
+        // Feed the menu its save-slot summaries
+        this.menu.setSlots(msg.payload.slots);
+        break;
+
+      case "save_result":
+        // Log the result; the subsequent slot_list refreshes the menu
+        this.game.log(msg.payload.message, "system");
+        break;
     }
   }
 
@@ -148,9 +207,25 @@ class MournvaleClient {
   // ─────────────────────────────────────────────
 
   private handleStateTransition(
-    newState: "pending" | "character_creation" | "active"
+    newState: "menu" | "pending" | "character_creation" | "active"
   ): void {
     switch (newState) {
+      case "menu":
+        this.menu.reset();
+        this.screens.show("menu");
+        // Refresh slot data when returning to the menu
+        this.send({ type: "request_slots", payload: {} });
+        break;
+
+      case "pending":
+        // New Game chosen — show the intro and start the cinematic.
+        // When it finishes, tell the server we're ready for creation.
+        this.screens.show("intro");
+        this.intro.start(() => {
+          this.send({ type: "intro_complete", payload: {} });
+        });
+        break;
+
       case "character_creation":
         this.screens.show("creation");
         break;
@@ -163,10 +238,6 @@ class MournvaleClient {
           (input) => this.send({ type: "command", payload: { input } })
         );
         this.screens.show("game");
-        break;
-
-      case "pending":
-        this.screens.show("intro");
         break;
     }
   }

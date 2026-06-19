@@ -24,6 +24,8 @@ import {
   applyAnswer,
   finalizeDraft,
 } from "./character/CharacterManager";
+import { JsonFileSaveStore, buildSaveData } from "./persistence/SaveStore";
+import type { SaveStore } from "./persistence/SaveStore";
 import type {
   ClientMessage,
   ServerMessage,
@@ -38,6 +40,12 @@ import type { Player } from "../types/game";
 const PORT = 3000;
 const server = new WebSocketServer({ port: PORT });
 
+/**
+ * The persistence backend. Swap JsonFileSaveStore for a database-backed
+ * implementation later without changing any calling code.
+ */
+const saveStore: SaveStore = new JsonFileSaveStore();
+
 console.log(`🏰 Mournvale running on ws://localhost:${PORT}`);
 
 // ─────────────────────────────────────────────
@@ -48,19 +56,20 @@ server.on("connection", (socket: WebSocket) => {
   const player: Player = {
     id: randomUUID(),
     socket,
-    state: "pending",
+    state: "menu",
     tempName: `Traveler-${Math.floor(Math.random() * 9999)}`,
     draft: {},
-    // character and roomId are intentionally omitted — they are optional
-    // and exactOptionalPropertyTypes forbids assigning explicit `undefined`.
-    // They are populated when the player reaches the "active" state.
+    // playerId, activeSlot, character, and roomId are intentionally
+    // omitted — they are optional and exactOptionalPropertyTypes forbids
+    // assigning explicit `undefined`. They are populated as the player
+    // identifies, picks a slot, and reaches the "active" state.
   };
 
   players.set(socket, player);
 
   console.log(`[+] ${player.tempName} connected (${player.id})`);
 
-  // Welcome — client will play the intro cinematic, then send intro_complete
+  // Welcome — client will identify, then show the main menu
   sendToPlayer(socket, {
     type: "system",
     payload: {
@@ -90,7 +99,20 @@ server.on("connection", (socket: WebSocket) => {
 
     console.log(`[${currentPlayer.tempName}] state:${currentPlayer.state} type:${msg.type}`);
 
+    // `identify` is valid in any state — it establishes the persistent
+    // playerId used to scope saves. Handle it before the state switch.
+    if (msg.type === "identify") {
+      handleIdentify(currentPlayer, socket, msg.payload.playerId);
+      return;
+    }
+
     switch (currentPlayer.state) {
+      case "menu":
+        // Menu handlers touch disk (async); fire and forget. Errors are
+        // caught inside each handler and reported to the player.
+        void handleMenuMessage(currentPlayer, socket, msg);
+        break;
+
       case "pending":
         handlePendingMessage(currentPlayer, socket, msg);
         break;
@@ -115,6 +137,31 @@ server.on("connection", (socket: WebSocket) => {
 
     console.log(`[-] ${getDisplayName(currentPlayer)} disconnected`);
 
+    // Auto-save on disconnect: persist if the player is active and has
+    // everything needed to save. This runs async; we remove the player
+    // from the live map immediately but let the write complete in the
+    // background. Errors are logged, not surfaced (the socket is gone).
+    if (
+      currentPlayer.state === "active" &&
+      currentPlayer.character &&
+      currentPlayer.roomId &&
+      currentPlayer.playerId &&
+      currentPlayer.activeSlot
+    ) {
+      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId);
+      const { playerId, activeSlot } = currentPlayer;
+      saveStore
+        .save(playerId, activeSlot, data)
+        .then(() =>
+          console.log(
+            `[save] Auto-saved ${data.character.name} to slot ${activeSlot} on disconnect.`
+          )
+        )
+        .catch((err) =>
+          console.error(`[save] Auto-save failed for ${playerId}:`, err)
+        );
+    }
+
     // Only announce departure if player was active in a room
     if (currentPlayer.state === "active" && currentPlayer.roomId) {
       broadcastToRoom(
@@ -137,6 +184,193 @@ server.on("connection", (socket: WebSocket) => {
 // ─────────────────────────────────────────────
 // STATE HANDLERS
 // ─────────────────────────────────────────────
+
+/**
+ * Handles the `identify` message (valid in any state).
+ * Establishes the persistent playerId, then — if the player is still
+ * at the menu — sends them their save-slot list so the menu can render.
+ */
+function handleIdentify(
+  player: Player,
+  socket: WebSocket,
+  playerId: string
+): void {
+  // Only accept identify once, and only a sane-looking id
+  if (player.playerId) return;
+
+  const trimmed = (playerId ?? "").trim();
+  if (trimmed.length < 8 || trimmed.length > 64) {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: "Invalid player identity." },
+    });
+    return;
+  }
+
+  player.playerId = trimmed;
+  console.log(`[id] ${player.tempName} identified as ${trimmed}`);
+
+  // Send the initial slot list for the main menu
+  void sendSlotList(player, socket);
+}
+
+/**
+ * Handles messages while the player is at the main menu.
+ * Valid messages: request_slots, new_game, load_game, delete_slot.
+ */
+async function handleMenuMessage(
+  player: Player,
+  socket: WebSocket,
+  msg: ClientMessage
+): Promise<void> {
+  if (!player.playerId) {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: "Please wait — still connecting." },
+    });
+    return;
+  }
+
+  switch (msg.type) {
+    case "request_slots":
+      await sendSlotList(player, socket);
+      return;
+
+    case "new_game": {
+      const slot = msg.payload.slot;
+      if (!isValidSlot(slot)) {
+        sendToPlayer(socket, {
+          type: "system",
+          payload: { message: "Invalid save slot." },
+        });
+        return;
+      }
+
+      // Bind this session to the chosen slot, then begin the intro.
+      player.activeSlot = slot;
+      player.state = "pending";
+      player.draft = {};
+
+      sendToPlayer(socket, {
+        type: "state_transition",
+        payload: { newState: "pending" },
+      });
+      return;
+    }
+
+    case "load_game": {
+      const slot = msg.payload.slot;
+      if (!isValidSlot(slot)) {
+        sendToPlayer(socket, {
+          type: "system",
+          payload: { message: "Invalid save slot." },
+        });
+        return;
+      }
+
+      const data = await saveStore.load(player.playerId, slot);
+      if (!data) {
+        sendToPlayer(socket, {
+          type: "system",
+          payload: { message: "That slot is empty." },
+        });
+        await sendSlotList(player, socket);
+        return;
+      }
+
+      // Restore the character directly into the active state.
+      player.activeSlot = slot;
+      player.character = data.character;
+      // Restore position if the room still exists; else fall back to tavern.
+      player.roomId = rooms[data.roomId] ? data.roomId : "tavern";
+      player.state = "active";
+
+      sendToPlayer(socket, {
+        type: "character_confirmed",
+        payload: {
+          name: data.character.name,
+          characterClass: data.character.characterClass,
+          gender: data.character.gender,
+        },
+      });
+
+      sendToPlayer(socket, {
+        type: "state_transition",
+        payload: { newState: "active" },
+      });
+
+      sendRoomUpdate(player, socket);
+
+      broadcastToRoom(
+        player.roomId,
+        {
+          type: "player_presence",
+          payload: { playerName: data.character.name, event: "entered" },
+        },
+        player.id
+      );
+
+      sendToPlayer(socket, {
+        type: "system",
+        payload: {
+          message: `Welcome back, ${data.character.name}.`,
+        },
+      });
+
+      console.log(
+        `[load] ${data.character.name} loaded from slot ${slot} into ${player.roomId}.`
+      );
+      return;
+    }
+
+    case "delete_slot": {
+      const slot = msg.payload.slot;
+      if (!isValidSlot(slot)) {
+        sendToPlayer(socket, {
+          type: "system",
+          payload: { message: "Invalid save slot." },
+        });
+        return;
+      }
+      await saveStore.delete(player.playerId, slot);
+      sendToPlayer(socket, {
+        type: "save_result",
+        payload: { success: true, slot, message: "Save deleted." },
+      });
+      await sendSlotList(player, socket);
+      return;
+    }
+
+    default:
+      sendToPlayer(socket, {
+        type: "system",
+        payload: { message: "Choose New Game or Load Game." },
+      });
+  }
+}
+
+/** Loads and sends the player's slot summaries for the menu. */
+async function sendSlotList(player: Player, socket: WebSocket): Promise<void> {
+  if (!player.playerId) return;
+  try {
+    const slots = await saveStore.listSlots(player.playerId);
+    sendToPlayer(socket, {
+      type: "slot_list",
+      payload: { slots },
+    });
+  } catch (err) {
+    console.error("[save] Failed to list slots:", err);
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: "Could not load your saves." },
+    });
+  }
+}
+
+/** Validates a slot number is an integer in range. */
+function isValidSlot(slot: number): boolean {
+  return Number.isInteger(slot) && slot >= 1 && slot <= 5;
+}
 
 /**
  * Handles messages from players in "pending" state.
@@ -260,6 +494,25 @@ function handleCreationMessage(
             "Watch yourself out there. The fog's been thicker than usual.",
         },
       });
+
+      // Initial save: persist the brand-new character immediately so it
+      // survives even if the player closes the tab before moving (our
+      // auto-save is on disconnect, but writing now guarantees the slot
+      // is populated the moment creation finishes).
+      if (player.playerId && player.activeSlot) {
+        const data = buildSaveData(character, player.roomId);
+        const { playerId, activeSlot } = player;
+        saveStore
+          .save(playerId, activeSlot, data)
+          .then(() =>
+            console.log(
+              `[save] Initial save of ${character.name} to slot ${activeSlot}.`
+            )
+          )
+          .catch((err) =>
+            console.error(`[save] Initial save failed:`, err)
+          );
+      }
 
       console.log(
         `[★] ${character.name} (${character.characterClass}) entered the world.`
