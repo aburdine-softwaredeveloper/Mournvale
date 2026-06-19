@@ -6,11 +6,13 @@
   "directories": {
     "doc": "docs"
   },
-  "scripts": {
-    "dev": "tsx watch src/server/index.ts",
-    "start": "tsx src/server/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+"scripts": {
+  "dev:server": "tsx watch src/server/index.ts",
+  "dev:client": "vite",
+  "dev": "concurrently -n SERVER,CLIENT -c green,blue \"npm run dev:server\" \"npm run dev:client\"",
+  "build:client": "vite build src/client --outDir dist/client",
+  "start": "node dist/server/index.js"
+},
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aburdine-softwaredeveloper/Mournvale.git"
@@ -24,13 +26,16 @@
   },
   "homepage": "https://github.com/aburdine-softwaredeveloper/Mournvale#readme",
   "dependencies": {
+    "express": "^5.2.1",
     "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
     "@types/ws": "^8.18.1",
+    "concurrently": "^10.0.3",
     "ts-node": "^10.9.2",
     "tsx": "^4.22.4",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
   }
 }

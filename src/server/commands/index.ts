@@ -1,9 +1,24 @@
+/**
+ * commands/index.ts — Command dispatcher
+ *
+ * Architecture: Commands are only processed for players in "active" state.
+ * Pending and character_creation players cannot issue game commands.
+ * This guard lives here so individual command files don't need to check it.
+ */
+
 import { look } from "./look";
 import { say } from "./say";
 import { help } from "./help";
 import { move } from "./move";
+import { getPlayerById } from "../gameState";
 
 export function handleCommand(playerId: string, input: string): string {
+  // Guard: only active players can issue commands
+  const player = getPlayerById(playerId);
+  if (!player || player.state !== "active") {
+    return "You are not yet in the world.";
+  }
+
   const trimmed = input.trim();
   if (!trimmed) return "";
 
@@ -30,6 +45,6 @@ export function handleCommand(playerId: string, input: string): string {
       return move(playerId, command);
 
     default:
-      return "Unknown command. Try 'help'.";
+      return `Unknown command: "${command}". Type help for a list of commands.`;
   }
 }

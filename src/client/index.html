@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mournvale</title>
+
+  <!-- Pixel font from Google Fonts -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════
+       MAIN MENU SCREEN
+       New Game / Load Game + 5-slot picker
+  ════════════════════════════════════════ -->
+  <div id="screen-menu" class="screen screen-active">
+    <div id="menu-content">
+
+      <div id="menu-title">MOURNVALE</div>
+      <div id="menu-subtitle">▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔</div>
+
+      <!-- Root choice: New Game / Load Game -->
+      <div id="menu-root-buttons" class="menu-buttons">
+        <button id="menu-new-game" class="snes-btn menu-big-btn">NEW GAME</button>
+        <button id="menu-load-game" class="snes-btn menu-big-btn">LOAD GAME</button>
+      </div>
+
+      <!-- Slot picker (hidden until a mode is chosen) -->
+      <div id="menu-slot-panel" class="snes-panel hidden">
+        <div id="menu-slot-title" class="panel-title">CHOOSE A SLOT</div>
+        <div id="menu-slot-list" class="slot-list-container"></div>
+        <button id="menu-back-btn" class="snes-btn menu-back">◄ BACK</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       INTRO SCREEN
+       Full-screen cinematic before character creation
+  ════════════════════════════════════════ -->
+  <div id="screen-intro" class="screen hidden">
+    <div id="intro-content">
+      <div id="intro-header" class="hidden"></div>
+      <div id="intro-text"></div>
+      <div id="intro-cursor" class="blink hidden">▼ Press any key to continue</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       CHARACTER CREATION SCREEN
+       Tavern keeper dialogue + selection menus
+  ════════════════════════════════════════ -->
+  <div id="screen-creation" class="screen hidden">
+
+    <!-- Background atmosphere -->
+    <div id="creation-bg">
+      <div id="creation-scene-label">The Broken Lantern</div>
+    </div>
+
+    <!-- Dialogue box — tavern keeper speaks here -->
+    <div id="creation-dialogue-box" class="snes-panel">
+      <div id="creation-speaker" class="dialogue-speaker"></div>
+      <div id="creation-text" class="dialogue-text"></div>
+    </div>
+
+    <!-- Choice menu — rendered when choices are available -->
+    <div id="creation-choices" class="snes-panel hidden">
+      <ul id="creation-choice-list" class="choice-list"></ul>
+    </div>
+
+    <!-- Free text input — rendered for name step only -->
+    <div id="creation-input-box" class="snes-panel hidden">
+      <label class="pixel-label">► </label>
+      <input
+        id="creation-name-input"
+        class="pixel-input"
+        type="text"
+        maxlength="20"
+        placeholder="Enter your name..."
+        autocomplete="off"
+      />
+      <button id="creation-name-confirm" class="snes-btn">OK</button>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       GAME SCREEN
+       Main game UI — active players only
+  ════════════════════════════════════════ -->
+  <div id="screen-game" class="screen hidden">
+
+    <!-- Top bar -->
+    <header id="game-header" class="snes-panel">
+      <span id="player-name-display">Mournvale</span>
+      <span id="player-class-display"></span>
+    </header>
+
+    <!-- Main content: room + log side by side on wide screens -->
+    <div id="game-body">
+
+      <!-- Left panel: room info -->
+      <div id="room-panel" class="snes-panel">
+        <div class="panel-title">◆ LOCATION</div>
+        <div id="room-name" class="room-name-text">—</div>
+        <div id="room-description" class="room-desc-text"></div>
+
+        <div class="panel-divider"></div>
+
+        <div class="panel-title">◆ EXITS</div>
+        <div id="room-exits" class="room-exits-text">—</div>
+
+        <div class="panel-divider"></div>
+
+        <div class="panel-title">◆ PRESENT</div>
+        <div id="room-players" class="room-players-text">You are alone.</div>
+      </div>
+
+      <!-- Right panel: message log -->
+      <div id="log-panel" class="snes-panel">
+        <div class="panel-title">◆ LOG</div>
+        <div id="message-log"></div>
+      </div>
+
+    </div>
+
+    <!-- Bottom bar: command menu + input -->
+    <div id="game-footer">
+
+      <!-- Command buttons — clickable shortcuts -->
+      <div id="command-menu" class="snes-panel">
+        <div class="panel-title">◆ COMMANDS</div>
+        <div id="command-buttons"></div>
+      </div>
+
+      <!-- Text input for custom commands -->
+      <div id="input-panel" class="snes-panel">
+        <span class="input-prompt">►</span>
+        <input
+          id="command-input"
+          class="pixel-input"
+          type="text"
+          placeholder="Type a command..."
+          autocomplete="off"
+        />
+        <button id="command-send" class="snes-btn">SEND</button>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script type="module" src="./app.ts"></script>
+</body>
+</html>
