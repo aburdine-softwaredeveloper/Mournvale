@@ -533,20 +533,30 @@ html, body {
 
 #game-body {
   display: grid;
-  grid-template-columns: 1fr 1fr; /* 50/50 — room image | log */
+  /* Three columns: Details | Room SVG | Log.
+     Center column is sized to the square image; sides share the rest. */
+  grid-template-columns: 1fr 1.1fr 1fr;
   gap: var(--panel-gap);
   min-height: 0;
   overflow: hidden;
 }
 
-/* ── Room Image Panel (left half) ── */
+/* ── Details Panel (left column) ── */
 
-#room-image-panel {
+#details-panel {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) var(--color-bg-panel);
+}
+
+/* ── Room Image Panel (center column) ── */
+
+#room-image-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* The square room image — maintains 1:1 aspect ratio, centered */
@@ -557,7 +567,6 @@ html, body {
   border: var(--border-width) solid var(--color-border);
   outline: var(--border-width) solid var(--color-bg);
   outline-offset: -4px;
-  margin-bottom: 10px;
   image-rendering: pixelated;
   display: flex;
   align-items: center;
@@ -577,10 +586,6 @@ html, body {
   font-size: 8px;
   letter-spacing: 1px;
   text-align: center;
-}
-
-.room-meta {
-  margin: 6px 0;
 }
 
 .room-name-text {
@@ -604,6 +609,14 @@ html, body {
 
 .room-players-text {
   color: var(--color-text-presence);
+  font-size: 8px;
+  line-height: 1.8;
+}
+
+/* NPCs present in the room — styled distinctly from players.
+   Empty until an NPC system exists; ready for it. */
+.room-npcs-text {
+  color: var(--color-text-system);
   font-size: 8px;
   line-height: 1.8;
 }
@@ -936,7 +949,11 @@ html, body {
 @media (max-width: 700px) {
   #game-body {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto 1fr; /* details, room, log stacked */
+  }
+
+  #details-panel {
+    max-height: 30vh;
   }
 
   #room-image-panel {

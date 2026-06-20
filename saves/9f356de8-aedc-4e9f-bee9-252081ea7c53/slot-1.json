@@ -1,13 +1,12 @@
 {
   "version": 1,
   "character": {
-    "name": "Atlas",
-    "gender": "Male",
+    "name": "Ash",
+    "gender": "Female",
     "characterClass": "Mage",
-    "hairStyle": "Long",
-    "hairColor": "Brown",
-    "glasses": false
+    "hairColor": "Black",
+    "glasses": true
   },
   "roomId": "tavern",
-  "savedAt": 1781919076864
+  "savedAt": 1781971659149
 }

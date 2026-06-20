@@ -111,19 +111,25 @@
       </div>
     </header>
 
-    <!-- Main content: room image (center) | log (right), 50/50 -->
+    <!-- Main content: three columns — Details | Room SVG | Log -->
     <div id="game-body">
 
-      <!-- Left half: square room image + room info beneath -->
-      <div id="room-image-panel" class="snes-panel">
+      <!-- Left column: room details, occupants, party -->
+      <div id="details-panel" class="snes-panel">
         <div class="panel-title">◆ LOCATION</div>
-        <div id="room-image" class="room-image"></div>
         <div id="room-name" class="room-name-text">—</div>
         <div id="room-description" class="room-desc-text"></div>
-        <div class="room-meta">
-          <span id="room-exits" class="room-exits-text">—</span>
-        </div>
+
+        <div class="panel-divider"></div>
+
+        <div class="panel-title">◆ EXITS</div>
+        <div id="room-exits" class="room-exits-text">—</div>
+
+        <div class="panel-divider"></div>
+
+        <div class="panel-title">◆ HERE</div>
         <div id="room-players" class="room-players-text">You are alone.</div>
+        <div id="room-npcs" class="room-npcs-text"></div>
 
         <div class="panel-divider"></div>
 
@@ -135,7 +141,13 @@
         </div>
       </div>
 
-      <!-- Right half: message log -->
+      <!-- Center column: square room image -->
+      <div id="room-image-panel" class="snes-panel">
+        <div class="panel-title">◆ VIEW</div>
+        <div id="room-image" class="room-image"></div>
+      </div>
+
+      <!-- Right column: message log -->
       <div id="log-panel" class="snes-panel">
         <div class="panel-title">◆ LOG</div>
         <div id="message-log"></div>

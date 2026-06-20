@@ -110,11 +110,10 @@ export class GameScreen {
 
     this.roomName.textContent = name;
     this.roomDesc.textContent = description;
-    this.roomExits.textContent =
-      exits.length > 0 ? `Exits: ${exits.join(", ")}` : "Exits: none";
+    this.roomExits.textContent = exits.length > 0 ? exits.join(", ") : "none";
 
     this.roomPlayers.textContent =
-      players.length > 0 ? `Present: ${players.join(", ")}` : "You are alone.";
+      players.length > 0 ? players.join("\n") : "You are alone.";
 
     this.updateRoomImage(artKey);
   }
