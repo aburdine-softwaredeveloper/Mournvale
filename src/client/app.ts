@@ -212,7 +212,6 @@ class MournvaleClient {
         this.portraitSpec = {
           gender: msg.payload.gender,
           characterClass: msg.payload.characterClass,
-          hairStyle: msg.payload.hairStyle,
           hairColor: msg.payload.hairColor,
           glasses: msg.payload.glasses,
         };

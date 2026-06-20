@@ -16,10 +16,6 @@
 
 import { typewrite, type TypewriterController } from "../util/typewriter";
 import {
-  assetRegistry,
-  ALL_PORTRAIT_LAYER_KEYS,
-} from "../../engine/assets/AssetRegistry";
-import {
   portraitCompositor,
   type PortraitSpec,
 } from "../../engine/assets/PortraitCompositor";
@@ -66,9 +62,8 @@ export class CharacterCreationScreen {
 
     this.wireNameInput();
 
-    // Preload all portrait layers so composites are instant once the
-    // player starts answering. Fire-and-forget.
-    void assetRegistry.preload(ALL_PORTRAIT_LAYER_KEYS);
+    // Portrait PNGs load lazily via <image> href when first rendered, so
+    // no preload is needed here.
   }
 
   /** Registers the callback used to report player answers to the app */
@@ -168,7 +163,6 @@ export class CharacterCreationScreen {
     return (
       this.previewSpec.gender !== undefined ||
       this.previewSpec.characterClass !== undefined ||
-      this.previewSpec.hairStyle !== undefined ||
       this.previewSpec.hairColor !== undefined ||
       this.previewSpec.glasses !== undefined
     );
@@ -179,7 +173,6 @@ export class CharacterCreationScreen {
     return (
       step === "gender" ||
       step === "class" ||
-      step === "hair_style" ||
       step === "hair_color" ||
       step === "glasses"
     );
@@ -212,9 +205,6 @@ export class CharacterCreationScreen {
       case "class":
         spec.characterClass = value;
         break;
-      case "hair_style":
-        spec.hairStyle = value;
-        break;
       case "hair_color":
         spec.hairColor = value;
         break;
@@ -227,32 +217,19 @@ export class CharacterCreationScreen {
   /**
    * Renders a portrait from a (possibly partial) spec. Fills in sensible
    * defaults for any not-yet-chosen fields so the preview is always
-   * drawable — e.g. before class is picked we still show a face + hair.
+   * drawable — e.g. before class is picked we still show a full sprite.
    */
   private renderPortrait(spec: Partial<PortraitSpec>): void {
     const full: PortraitSpec = {
       gender: spec.gender ?? "Male",
-      characterClass: spec.characterClass ?? "monk", // least-covering headgear
-      hairStyle: spec.hairStyle ?? "short",
+      characterClass: spec.characterClass ?? "monk",
       hairColor: spec.hairColor ?? "Brown",
       glasses: spec.glasses ?? false,
     };
 
-    const svg = portraitCompositor.composeSync(full);
-
-    if (svg) {
-      this.portraitImg.innerHTML = svg;
-      this.portraitFrame.classList.remove("hidden");
-      this.updatePortraitLabel(spec);
-      return;
-    }
-
-    // Layers not cached yet — compose async, then show
-    void portraitCompositor.compose(full).then((markup) => {
-      this.portraitImg.innerHTML = markup;
-      this.portraitFrame.classList.remove("hidden");
-      this.updatePortraitLabel(spec);
-    });
+    this.portraitImg.innerHTML = portraitCompositor.compose(full);
+    this.portraitFrame.classList.remove("hidden");
+    this.updatePortraitLabel(spec);
   }
 
   /** Sets the portrait caption from whatever has been chosen so far */

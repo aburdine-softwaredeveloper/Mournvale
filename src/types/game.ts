@@ -25,7 +25,6 @@ export interface CharacterData {
   name: string;
   gender: Gender;
   characterClass: CharacterClass;
-  hairStyle: string;
   hairColor: string;
   glasses: boolean;
 }

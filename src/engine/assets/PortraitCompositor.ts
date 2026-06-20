@@ -1,59 +1,51 @@
 /**
- * PortraitCompositor.ts — Builds a composited portrait SVG from layers
+ * PortraitCompositor.ts — Builds a character portrait as inline SVG
  *
- * A character portrait is assembled from stacked SVG layers rather than
- * stored as one of 1000+ flat images:
+ * Portraits are full-body sprites selected by (gender, hairColor, class).
+ * Each is a single PNG; the compositor wraps it in an <svg> with an
+ * <image> element so it can be injected via innerHTML and scaled with
+ * crisp pixel edges. When the character wears glasses, a second <image>
+ * (the gender-appropriate glasses overlay) is layered on top at a fixed
+ * face offset.
  *
- *   base/{gender}      face + neck
- *   hair/{style}       hair silhouette, colorized via currentColor
- *   glasses (optional) spectacles overlay
- *   headgear/{class}   class hat/helm on top
+ * The sprites are normalized to a uniform 152x184 canvas with the face
+ * at a consistent position, so the glasses overlay uses one fixed offset
+ * rather than per-sprite tuning. (Tall hats like the mage's sit a little
+ * high — an accepted tradeoff for placeholder art.)
  *
- * All layers share the same 128x128 viewBox, so we stack them by
- * extracting each layer's inner markup and wrapping them in <g> groups
- * inside one parent <svg>. Hair color is applied by setting the `color`
- * CSS property on the hair group (its rects use fill="currentColor").
- *
- * Architecture: This module depends on AssetRegistry to fetch raw layer
- * markup, then does pure string assembly. It performs no DOM work — the
- * caller injects the returned SVG string wherever needed.
+ * Architecture: depends on AssetRegistry only for URL construction; it
+ * performs pure string assembly and no DOM work. The PNGs load lazily
+ * via the <image> href, so no fetch/preload is required for portraits.
  */
 
-import { assetRegistry, type AssetKey } from "./AssetRegistry";
+import { assetRegistry } from "./AssetRegistry";
 
 // ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
 
-/** The subset of character fields needed to draw a portrait */
+/** The fields needed to pick and render a portrait */
 export interface PortraitSpec {
   gender: "Male" | "Female";
   characterClass: string;
-  hairStyle: string;
   hairColor: string;
   glasses: boolean;
 }
 
 // ─────────────────────────────────────────────
-// HAIR COLOR MAPPING
+// LAYOUT CONSTANTS
 // ─────────────────────────────────────────────
 
-/**
- * Maps hair color names to grayscale hex values. Because the whole game
- * is Game Boy grayscale, "color" here means a shade of gray. Lighter
- * names → lighter grays.
- */
-const HAIR_COLOR_SHADES: Record<string, string> = {
-  Black: "#2e2e2e",
-  Brown: "#5f5f5f",
-  Red: "#787878",
-  Silver: "#a6a6a6",
-  Blonde: "#cdcdcd",
-  White: "#ebebeb",
-};
+/** The normalized portrait canvas (matches the extracted PNG dimensions) */
+const CANVAS_W = 152;
+const CANVAS_H = 184;
 
-/** Fallback shade if an unknown color name is passed */
-const DEFAULT_HAIR_SHADE = "#5f5f5f";
+/** Glasses overlay geometry within the canvas (face is centered near top) */
+const GLASSES_W = 44;
+const GLASSES_Y = 35;
+/** Glasses PNGs are ~3.3:1; derive height from width to keep aspect */
+const GLASSES_H = 13;
+const GLASSES_X = Math.round((CANVAS_W - GLASSES_W) / 2);
 
 // ─────────────────────────────────────────────
 // COMPOSITOR
@@ -61,110 +53,50 @@ const DEFAULT_HAIR_SHADE = "#5f5f5f";
 
 export class PortraitCompositor {
   /**
-   * Builds a single composited portrait SVG string for the given spec.
-   * Requires the layer assets to be loaded; call preloadLayers() first
-   * (or this will load them on demand and await).
+   * Builds a portrait SVG string for the given spec. Synchronous — the
+   * referenced PNGs load lazily in the browser when the SVG renders.
    */
-  public async compose(spec: PortraitSpec): Promise<string> {
-    const baseKey: AssetKey = `characters/base/${spec.gender.toLowerCase()}`;
-    const hairKey: AssetKey = `characters/hair/${spec.hairStyle.toLowerCase()}`;
-    const headgearKey: AssetKey = `characters/headgear/${spec.characterClass.toLowerCase()}`;
-    const glassesKey: AssetKey = "characters/glasses/glasses";
-
-    // Load all needed layers (cached, so repeated calls are cheap)
-    const needed: AssetKey[] = [baseKey, hairKey, headgearKey];
-    if (spec.glasses) needed.push(glassesKey);
-    await assetRegistry.preload(needed);
-
-    const hairShade =
-      HAIR_COLOR_SHADES[spec.hairColor] ?? DEFAULT_HAIR_SHADE;
-
-    // Build layer groups in stacking order: base → hair → glasses → headgear
-    const groups: string[] = [];
-
-    const base = this.innerMarkup(assetRegistry.get(baseKey));
-    if (base) groups.push(`<g class="layer-base">${base}</g>`);
-
-    const hair = this.innerMarkup(assetRegistry.get(hairKey));
-    if (hair) {
-      // currentColor in the hair layer resolves to this group's color
-      groups.push(
-        `<g class="layer-hair" color="${hairShade}" fill="${hairShade}">${hair}</g>`
-      );
-    }
-
-    if (spec.glasses) {
-      const glasses = this.innerMarkup(assetRegistry.get(glassesKey));
-      if (glasses) groups.push(`<g class="layer-glasses">${glasses}</g>`);
-    }
-
-    const headgear = this.innerMarkup(assetRegistry.get(headgearKey));
-    if (headgear) groups.push(`<g class="layer-headgear">${headgear}</g>`);
-
-    return this.wrap(groups.join(""));
-  }
-
-  /**
-   * Synchronous variant — assumes all layers are already cached.
-   * Returns null if any required layer is missing from the cache.
-   */
-  public composeSync(spec: PortraitSpec): string | null {
-    const baseKey: AssetKey = `characters/base/${spec.gender.toLowerCase()}`;
-    const hairKey: AssetKey = `characters/hair/${spec.hairStyle.toLowerCase()}`;
-    const headgearKey: AssetKey = `characters/headgear/${spec.characterClass.toLowerCase()}`;
-    const glassesKey: AssetKey = "characters/glasses/glasses";
-
-    const baseRaw = assetRegistry.get(baseKey);
-    const hairRaw = assetRegistry.get(hairKey);
-    const headgearRaw = assetRegistry.get(headgearKey);
-    if (!baseRaw || !hairRaw || !headgearRaw) return null;
-    if (spec.glasses && !assetRegistry.get(glassesKey)) return null;
-
-    const hairShade =
-      HAIR_COLOR_SHADES[spec.hairColor] ?? DEFAULT_HAIR_SHADE;
-
-    const groups: string[] = [];
-
-    const base = this.innerMarkup(baseRaw);
-    if (base) groups.push(`<g class="layer-base">${base}</g>`);
-
-    const hair = this.innerMarkup(hairRaw);
-    if (hair) {
-      groups.push(
-        `<g class="layer-hair" color="${hairShade}" fill="${hairShade}">${hair}</g>`
-      );
-    }
-
-    if (spec.glasses) {
-      const glasses = this.innerMarkup(assetRegistry.get(glassesKey));
-      if (glasses) groups.push(`<g class="layer-glasses">${glasses}</g>`);
-    }
-
-    const headgear = this.innerMarkup(headgearRaw);
-    if (headgear) groups.push(`<g class="layer-headgear">${headgear}</g>`);
-
-    return this.wrap(groups.join(""));
-  }
-
-  /**
-   * Extracts the inner markup of an <svg> string — everything between
-   * the opening <svg ...> and closing </svg>. Returns null on bad input.
-   */
-  private innerMarkup(svg: string | null): string | null {
-    if (!svg) return null;
-    const open = svg.indexOf(">");
-    const close = svg.lastIndexOf("</svg>");
-    if (open === -1 || close === -1 || close <= open) return null;
-    return svg.slice(open + 1, close).trim();
-  }
-
-  /** Wraps assembled layer groups in a single parent SVG. */
-  private wrap(inner: string): string {
-    return (
-      `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" ` +
-      `viewBox="0 0 128 128" shape-rendering="crispEdges" ` +
-      `role="img" aria-label="character portrait">${inner}</svg>`
+  public compose(spec: PortraitSpec): string {
+    const portraitUrl = assetRegistry.portraitUrl(
+      spec.gender,
+      spec.hairColor,
+      spec.characterClass
     );
+
+    const layers: string[] = [
+      `<image href="${portraitUrl}" x="0" y="0" ` +
+        `width="${CANVAS_W}" height="${CANVAS_H}" ` +
+        `style="image-rendering:pixelated"/>`,
+    ];
+
+    if (spec.glasses) {
+      const glassesUrl = assetRegistry.glassesUrl(spec.gender);
+      layers.push(
+        `<image href="${glassesUrl}" x="${GLASSES_X}" y="${GLASSES_Y}" ` +
+          `width="${GLASSES_W}" height="${GLASSES_H}" ` +
+          `preserveAspectRatio="xMidYMid meet" ` +
+          `style="image-rendering:pixelated"/>`
+      );
+    }
+
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" ` +
+      `viewBox="0 0 ${CANVAS_W} ${CANVAS_H}" ` +
+      `width="100%" height="100%" ` +
+      `preserveAspectRatio="xMidYMid meet" ` +
+      `shape-rendering="crispEdges" role="img" ` +
+      `aria-label="${spec.gender} ${spec.characterClass}">` +
+      layers.join("") +
+      `</svg>`
+    );
+  }
+
+  /**
+   * Async variant kept for call-site compatibility. Composition is
+   * synchronous now (no asset fetch needed), so this just wraps compose().
+   */
+  public async composeAsync(spec: PortraitSpec): Promise<string> {
+    return this.compose(spec);
   }
 }
 

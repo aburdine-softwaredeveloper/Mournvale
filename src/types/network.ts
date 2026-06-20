@@ -74,7 +74,6 @@ export interface CharacterConfirmedMessage {
     characterClass: CharacterClass;
     gender: Gender;
     /** Visual fields needed to render the composited portrait */
-    hairStyle: string;
     hairColor: string;
     glasses: boolean;
   };
@@ -283,7 +282,6 @@ export type CharacterCreationStep =
   | "name"
   | "gender"
   | "class"
-  | "hair_style"
   | "hair_color"
   | "glasses"
   | "confirm";
@@ -322,12 +320,14 @@ export interface SaveSlotSummary {
 /**
  * CharacterDraft — partial character data accumulated during creation.
  * All fields optional because they are filled in step by step.
+ *
+ * Note: hairStyle was removed — portraits are full-body sprites selected
+ * by (gender, hairColor, class), so style is no longer a creation field.
  */
 export interface CharacterDraft {
   name?: string;
   gender?: Gender;
   characterClass?: CharacterClass;
-  hairStyle?: string;
   hairColor?: string;
   glasses?: boolean;
 }

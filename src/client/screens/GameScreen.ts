@@ -92,7 +92,7 @@ export class GameScreen {
 
     // Render the header portrait from the player's appearance
     if (portraitSpec) {
-      void this.renderHeaderPortrait(portraitSpec);
+      this.headerPortrait.innerHTML = portraitCompositor.compose(portraitSpec);
     }
 
     this.commandMenu.render(
@@ -102,12 +102,6 @@ export class GameScreen {
       // Argument-requiring command → focus input with prefix
       (prefix) => this.focusInputWith(prefix)
     );
-  }
-
-  /** Composites and injects the player's portrait into the header */
-  private async renderHeaderPortrait(spec: PortraitSpec): Promise<void> {
-    const svg = await portraitCompositor.compose(spec);
-    this.headerPortrait.innerHTML = svg;
   }
 
   /** Updates the room panel and image from a RoomMessage */
