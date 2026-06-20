@@ -28,6 +28,7 @@ import { JsonFileSaveStore, buildSaveData } from "./persistence/SaveStore";
 import type { SaveStore } from "./persistence/SaveStore";
 import { PartyManager } from "./party/PartyManager";
 import { QuestManager } from "./quest/QuestManager";
+import { worldManager } from "./world/WorldManager";
 import type {
   ClientMessage,
   ServerMessage,
@@ -638,6 +639,10 @@ function handleActiveMessage(
       handleQuestAbandon(player, socket);
       return;
 
+    case "talk":
+      handleTalk(player, socket, msg.payload.targetName);
+      return;
+
     default:
       sendToPlayer(socket, {
         type: "system",
@@ -929,6 +934,41 @@ function handleQuestAbandon(player: Player, socket: WebSocket): void {
 }
 
 // ─────────────────────────────────────────────
+// NPC INTERACTION
+// ─────────────────────────────────────────────
+
+/**
+ * Handles "talk <name>" — finds the named NPC in the player's room and
+ * sends back their dialogue, plus quests/stock for the client to act on.
+ */
+function handleTalk(player: Player, socket: WebSocket, targetName: string): void {
+  if (!player.roomId) return;
+
+  const name = targetName.trim();
+  if (!name) {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: "Talk to whom?" },
+    });
+    return;
+  }
+
+  const npc = worldManager.findNpcInRoomByName(player.roomId, name);
+  if (!npc) {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: `There's no one named "${name}" here to talk to.` },
+    });
+    return;
+  }
+
+  sendToPlayer(socket, {
+    type: "npc_interaction",
+    payload: worldManager.buildInteractionView(npc),
+  });
+}
+
+// ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
 
@@ -945,6 +985,8 @@ function sendRoomUpdate(player: Player, socket: WebSocket): void {
     .filter((p) => p.id !== player.id)
     .map((p) => getDisplayName(p));
 
+  const npcs = worldManager.getNpcViewsInRoom(room.id);
+
   sendToPlayer(socket, {
     type: "room",
     payload: {
@@ -952,6 +994,7 @@ function sendRoomUpdate(player: Player, socket: WebSocket): void {
       description: room.description,
       exits: Object.keys(room.exits),
       players: occupants,
+      npcs,
       // Only include artKey when the room defines one — omitting (rather
       // than sending undefined) satisfies exactOptionalPropertyTypes.
       ...(room.artKey ? { artKey: room.artKey } : {}),

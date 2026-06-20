@@ -23,6 +23,7 @@ import {
 } from "../../engine/assets/PortraitCompositor";
 import type { RoomMessage } from "../../types/network";
 import type { PartyView } from "../../types/party";
+import type { NpcView } from "../../types/npc";
 
 export type LogKind = "system" | "chat" | "error" | "presence" | "default";
 
@@ -33,6 +34,7 @@ export class GameScreen {
   private readonly roomDesc: HTMLElement;
   private readonly roomExits: HTMLElement;
   private readonly roomPlayers: HTMLElement;
+  private readonly roomNpcs: HTMLElement;
   private readonly messageLog: HTMLElement;
   private readonly commandInput: HTMLInputElement;
   private readonly commandSend: HTMLButtonElement;
@@ -53,6 +55,7 @@ export class GameScreen {
     this.roomDesc = this.requireEl("room-description");
     this.roomExits = this.requireEl("room-exits");
     this.roomPlayers = this.requireEl("room-players");
+    this.roomNpcs = this.requireEl("room-npcs");
     this.messageLog = this.requireEl("message-log");
     this.commandInput = this.requireEl("command-input") as HTMLInputElement;
     this.commandSend = this.requireEl("command-send") as HTMLButtonElement;
@@ -106,7 +109,7 @@ export class GameScreen {
 
   /** Updates the room panel and image from a RoomMessage */
   public updateRoom(msg: RoomMessage): void {
-    const { name, description, exits, players, artKey } = msg.payload;
+    const { name, description, exits, players, npcs, artKey } = msg.payload;
 
     this.roomName.textContent = name;
     this.roomDesc.textContent = description;
@@ -115,7 +118,26 @@ export class GameScreen {
     this.roomPlayers.textContent =
       players.length > 0 ? players.join("\n") : "You are alone.";
 
+    this.renderNpcs(npcs);
     this.updateRoomImage(artKey);
+  }
+
+  /**
+   * Renders the NPCs present in the room. Each is clickable to talk,
+   * which sends a "talk <name>" command via the normal command path.
+   */
+  private renderNpcs(npcs: NpcView[]): void {
+    this.roomNpcs.innerHTML = "";
+    if (npcs.length === 0) return;
+
+    for (const npc of npcs) {
+      const row = document.createElement("div");
+      row.className = "npc-row";
+      row.textContent = `${npc.name} — ${npc.title}`;
+      row.title = `Talk to ${npc.name}`;
+      row.addEventListener("click", () => this.send(`talk ${npc.name}`));
+      this.roomNpcs.appendChild(row);
+    }
   }
 
   /**

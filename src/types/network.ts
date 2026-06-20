@@ -10,6 +10,7 @@
 
 import type { PartyView, PartyInviteView } from "./party";
 import type { QuestBoardView } from "./quest";
+import type { NpcView, NpcInteractionView } from "./npc";
 
 // ─────────────────────────────────────────────
 // SERVER → CLIENT MESSAGES
@@ -23,7 +24,7 @@ export interface SystemMessage {
   };
 }
 
-/** Updates the room panel — name, description, exits, occupants */
+/** Updates the room panel — name, description, exits, occupants, NPCs */
 export interface RoomMessage {
   type: "room";
   payload: {
@@ -31,9 +32,17 @@ export interface RoomMessage {
     description: string;
     exits: string[];
     players: string[];
+    /** NPCs standing in this room (for the "Here" list) */
+    npcs: NpcView[];
     /** Optional art key for the room scene (e.g. "tavern") */
     artKey?: string;
   };
+}
+
+/** Sent when a player talks to an NPC — their lines, quests, and stock */
+export interface NpcInteractionMessage {
+  type: "npc_interaction";
+  payload: NpcInteractionView;
 }
 
 /** A chat message spoken in the room */
@@ -223,6 +232,15 @@ export interface CommandMessage {
   };
 }
 
+/** Talk to an NPC in the current room, by name */
+export interface TalkMessage {
+  type: "talk";
+  payload: {
+    /** NPC name (first name) to talk to */
+    targetName: string;
+  };
+}
+
 // ── Party actions (client → server) ──
 
 /** Invite another player (in the same room) to a party */
@@ -349,7 +367,8 @@ export type ServerMessage =
   | SaveResultMessage
   | PartyUpdateMessage
   | PartyInviteMessage
-  | QuestBoardMessage;
+  | QuestBoardMessage
+  | NpcInteractionMessage;
 
 /** Every message the client can send to the server */
 export type ClientMessage =
@@ -367,4 +386,5 @@ export type ClientMessage =
   | PartyLeaveMessage
   | QuestBoardRequestMessage
   | QuestAcceptMessage
-  | QuestAbandonMessage;
+  | QuestAbandonMessage
+  | TalkMessage;

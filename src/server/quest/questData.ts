@@ -28,7 +28,7 @@ export const AUTHORED_QUESTS: Quest[] = [
     description:
       "Aldric's cellar has been overrun by unusually bold rats. Clear " +
       "them out before they get into the good ale.",
-    giver: "Aldric the Barkeep",
+    giver: "Aldric",
     difficulty: "Trivial",
     participation: "solo",
     reward: { gold: 15, xp: 25 },
@@ -72,6 +72,32 @@ export const AUTHORED_QUESTS: Quest[] = [
     participation: "party",
     reward: { gold: 150, xp: 240, item: "Bellringer's Seal" },
     recommendedSize: 4,
+    generated: false,
+  },
+  {
+    id: "authored-wolves",
+    title: "Fog-Wolves at the Gate",
+    description:
+      "Captain Vey reports fog-wolves circling the north gate after dark. " +
+      "Thin the pack before they grow bold enough to breach the wall.",
+    giver: "Captain Vey",
+    difficulty: "Moderate",
+    participation: "either",
+    reward: { gold: 70, xp: 100 },
+    recommendedSize: 2,
+    generated: false,
+  },
+  {
+    id: "authored-delivery",
+    title: "Bitter Medicine",
+    description:
+      "Isolde has a healing draught promised to a shut-in across the square. " +
+      "Deliver it before nightfall — and don't drink it yourself.",
+    giver: "Isolde",
+    difficulty: "Trivial",
+    participation: "solo",
+    reward: { gold: 20, xp: 30 },
+    recommendedSize: 1,
     generated: false,
   },
 ];

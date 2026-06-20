@@ -259,6 +259,30 @@ class MournvaleClient {
         this.questBoard.render(msg.payload);
         this.questBoard.show();
         break;
+
+      case "npc_interaction": {
+        const npc = msg.payload;
+        // Print the NPC's dialogue lines as chat-style log entries
+        this.game.log(`— ${npc.name}, ${npc.title} —`, "presence");
+        for (const line of npc.dialogue) {
+          this.game.log(`${npc.name}: ${line.text}`, "chat");
+        }
+        // Quest-givers: nudge the player to the board
+        if (npc.questIds.length > 0) {
+          this.game.log(
+            `${npc.name} has work for you. Open Quests to see their offers.`,
+            "system"
+          );
+        }
+        // Vendors: list stock (purchase flow comes later)
+        if (npc.stock.length > 0) {
+          this.game.log(`${npc.name} is selling:`, "system");
+          for (const item of npc.stock) {
+            this.game.log(`  ${item.name} — ${item.price}g · ${item.description}`, "default");
+          }
+        }
+        break;
+      }
     }
   }
 
@@ -338,6 +362,14 @@ class MournvaleClient {
       case "quest":
         // Request the board; the response opens the overlay
         this.send({ type: "quest_board_request", payload: {} });
+        return;
+
+      case "talk":
+        if (!arg) {
+          this.game.log("Talk to whom? Try: talk <name>", "system");
+          return;
+        }
+        this.send({ type: "talk", payload: { targetName: arg } });
         return;
 
       default:

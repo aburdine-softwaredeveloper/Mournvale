@@ -16,7 +16,7 @@ import type { Quest, ActiveQuest, QuestBoardView } from "../../types/quest";
 import { AUTHORED_QUESTS, generateQuests } from "./questData";
 
 /** How many random quests to keep on the board alongside authored ones */
-const RANDOM_QUEST_COUNT = 4;
+const RANDOM_QUEST_COUNT = 2;
 
 export class QuestManager {
   /** All quests currently on the board, keyed by id */
