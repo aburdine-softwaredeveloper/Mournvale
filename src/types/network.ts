@@ -8,6 +8,9 @@
  * type-checking on both ends of the socket connection.
  */
 
+import type { PartyView, PartyInviteView } from "./party";
+import type { QuestBoardView } from "./quest";
+
 // ─────────────────────────────────────────────
 // SERVER → CLIENT MESSAGES
 // ─────────────────────────────────────────────
@@ -28,6 +31,8 @@ export interface RoomMessage {
     description: string;
     exits: string[];
     players: string[];
+    /** Optional art key for the room scene (e.g. "tavern") */
+    artKey?: string;
   };
 }
 
@@ -68,6 +73,10 @@ export interface CharacterConfirmedMessage {
     name: string;
     characterClass: CharacterClass;
     gender: Gender;
+    /** Visual fields needed to render the composited portrait */
+    hairStyle: string;
+    hairColor: string;
+    glasses: boolean;
   };
 }
 
@@ -103,6 +112,38 @@ export interface SaveResultMessage {
     slot: number;
     message: string;
   };
+}
+
+// ── Party messages ──
+
+/**
+ * A full party state snapshot, sent to every member when the party
+ * changes. `party` is null when the player is no longer in any party
+ * (left or disbanded), telling the client to clear its roster.
+ */
+export interface PartyUpdateMessage {
+  type: "party_update";
+  payload: {
+    party: PartyView | null;
+  };
+}
+
+/** Notifies a player they've received a party invitation */
+export interface PartyInviteMessage {
+  type: "party_invite";
+  payload: PartyInviteView;
+}
+
+// ── Quest messages ──
+
+/**
+ * The quest board snapshot — available quests + the player's active
+ * quest. Sent when the player reads the board or when their quest state
+ * changes (accept/abandon/complete).
+ */
+export interface QuestBoardMessage {
+  type: "quest_board";
+  payload: QuestBoardView;
 }
 
 // ─────────────────────────────────────────────
@@ -183,6 +224,55 @@ export interface CommandMessage {
   };
 }
 
+// ── Party actions (client → server) ──
+
+/** Invite another player (in the same room) to a party */
+export interface PartyInviteSendMessage {
+  type: "party_invite_send";
+  payload: {
+    /** Display name of the target player to invite */
+    targetName: string;
+  };
+}
+
+/** Respond to a pending party invitation */
+export interface PartyInviteRespondMessage {
+  type: "party_invite_respond";
+  payload: {
+    partyId: string;
+    fromPlayerId: string;
+    accept: boolean;
+  };
+}
+
+/** Leave the current party (disbands it if the leader leaves) */
+export interface PartyLeaveMessage {
+  type: "party_leave";
+  payload: Record<string, never>;
+}
+
+// ── Quest actions (client → server) ──
+
+/** Request the quest board contents (when reading the board) */
+export interface QuestBoardRequestMessage {
+  type: "quest_board_request";
+  payload: Record<string, never>;
+}
+
+/** Accept a quest by id (solo or as a party) */
+export interface QuestAcceptMessage {
+  type: "quest_accept";
+  payload: {
+    questId: string;
+  };
+}
+
+/** Abandon the currently active quest */
+export interface QuestAbandonMessage {
+  type: "quest_abandon";
+  payload: Record<string, never>;
+}
+
 // ─────────────────────────────────────────────
 // SHARED ENUMS & SUPPORTING TYPES
 // ─────────────────────────────────────────────
@@ -256,7 +346,10 @@ export type ServerMessage =
   | CharacterConfirmedMessage
   | PlayerPresenceMessage
   | SlotListMessage
-  | SaveResultMessage;
+  | SaveResultMessage
+  | PartyUpdateMessage
+  | PartyInviteMessage
+  | QuestBoardMessage;
 
 /** Every message the client can send to the server */
 export type ClientMessage =
@@ -268,4 +361,10 @@ export type ClientMessage =
   | IntroCompleteMessage
   | DialogueChoiceMessage
   | CharacterCreateMessage
-  | CommandMessage;
+  | CommandMessage
+  | PartyInviteSendMessage
+  | PartyInviteRespondMessage
+  | PartyLeaveMessage
+  | QuestBoardRequestMessage
+  | QuestAcceptMessage
+  | QuestAbandonMessage;

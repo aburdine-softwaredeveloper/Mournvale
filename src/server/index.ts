@@ -16,7 +16,7 @@ import { WebSocketServer, WebSocket, RawData } from "ws";
 import { randomUUID } from "crypto";
 import { handleCommand } from "./commands";
 import { broadcastToRoom, sendToPlayer } from "./roomUtils";
-import { players, rooms, getDisplayName, getActivePlayersInRoom } from "./gameState";
+import { players, rooms, getDisplayName, getActivePlayersInRoom, getPlayerById } from "./gameState";
 import {
   getDialogueForStep,
   getNextStep,
@@ -26,6 +26,8 @@ import {
 } from "./character/CharacterManager";
 import { JsonFileSaveStore, buildSaveData } from "./persistence/SaveStore";
 import type { SaveStore } from "./persistence/SaveStore";
+import { PartyManager } from "./party/PartyManager";
+import { QuestManager } from "./quest/QuestManager";
 import type {
   ClientMessage,
   ServerMessage,
@@ -45,6 +47,12 @@ const server = new WebSocketServer({ port: PORT });
  * implementation later without changing any calling code.
  */
 const saveStore: SaveStore = new JsonFileSaveStore();
+
+/** Authoritative party state (invite + accept grouping). */
+const partyManager = new PartyManager();
+
+/** Authoritative quest board + accepted-quest tracking. */
+const questManager = new QuestManager();
 
 console.log(`🏰 Mournvale running on ws://localhost:${PORT}`);
 
@@ -177,7 +185,40 @@ server.on("connection", (socket: WebSocket) => {
       );
     }
 
+    // Capture the disconnecting player's party id before cleanup so we can
+    // return a disbanded party's shared quest to the board.
+    const partyIdBefore = partyManager.getPartyId(currentPlayer.id);
+
+    // Clean up party membership and notify remaining members. We do this
+    // before deleting the player so name resolution still works for the
+    // departure message; the refresh below resolves only surviving members.
+    const partyResult = partyManager.handleDisconnect(currentPlayer.id);
+
     players.delete(socket);
+
+    if (partyResult.disbanded) {
+      // Return the party's shared quest (if any) to the board.
+      if (partyIdBefore) {
+        questManager.abandon(partyIdBefore);
+      }
+      for (const id of partyResult.formerMembers) {
+        if (id === currentPlayer.id) continue;
+        const p = getPlayerById(id);
+        if (p) {
+          sendToPlayer(p.socket, { type: "party_update", payload: { party: null } });
+          sendToPlayer(p.socket, {
+            type: "system",
+            payload: { message: "Your party has disbanded." },
+          });
+          // Quests now key by their own id again — refresh their board.
+          sendQuestBoard(p, p.socket);
+        }
+      }
+    } else if (partyResult.stillInParty.length > 0) {
+      for (const id of partyResult.stillInParty) {
+        sendPartyUpdate(id);
+      }
+    }
   });
 });
 
@@ -291,6 +332,9 @@ async function handleMenuMessage(
           name: data.character.name,
           characterClass: data.character.characterClass,
           gender: data.character.gender,
+          hairStyle: data.character.hairStyle,
+          hairColor: data.character.hairColor,
+          glasses: data.character.glasses,
         },
       });
 
@@ -460,6 +504,9 @@ function handleCreationMessage(
           name: character.name,
           characterClass: character.characterClass,
           gender: character.gender,
+          hairStyle: character.hairStyle,
+          hairColor: character.hairColor,
+          glasses: character.glasses,
         },
       });
 
@@ -544,28 +591,342 @@ function handleActiveMessage(
   socket: WebSocket,
   msg: ClientMessage
 ): void {
-  if (msg.type !== "command") {
+  switch (msg.type) {
+    case "command": {
+      const response = handleCommand(player.id, msg.payload.input);
+      if (response) {
+        sendToPlayer(socket, {
+          type: "system",
+          payload: { message: response },
+        });
+      }
+      // If the player moved, update the room panel
+      if (
+        ["north", "south", "east", "west"].includes(
+          msg.payload.input.trim().split(" ")[0]?.toLowerCase() ?? ""
+        )
+      ) {
+        sendRoomUpdate(player, socket);
+      }
+      return;
+    }
+
+    case "party_invite_send":
+      handlePartyInviteSend(player, socket, msg.payload.targetName);
+      return;
+
+    case "party_invite_respond":
+      handlePartyInviteRespond(
+        player,
+        socket,
+        msg.payload.fromPlayerId,
+        msg.payload.accept
+      );
+      return;
+
+    case "party_leave":
+      handlePartyLeave(player, socket);
+      return;
+
+    case "quest_board_request":
+      sendQuestBoard(player, socket);
+      return;
+
+    case "quest_accept":
+      handleQuestAccept(player, socket, msg.payload.questId);
+      return;
+
+    case "quest_abandon":
+      handleQuestAbandon(player, socket);
+      return;
+
+    default:
+      sendToPlayer(socket, {
+        type: "system",
+        payload: { message: "Unknown message type." },
+      });
+  }
+}
+
+// ─────────────────────────────────────────────
+// PARTY HANDLERS
+// ─────────────────────────────────────────────
+
+/** Resolves a player's name + class for party views. */
+function resolvePartyInfo(
+  playerId: string
+): { name: string; characterClass: string } | null {
+  const p = getPlayerById(playerId);
+  if (!p || !p.character) return null;
+  return {
+    name: p.character.name,
+    characterClass: p.character.characterClass,
+  };
+}
+
+/** Sends the current party snapshot to one player. */
+function sendPartyUpdate(playerId: string): void {
+  const p = getPlayerById(playerId);
+  if (!p) return;
+
+  const partyId = partyManager.getPartyId(playerId);
+  const party = partyId
+    ? partyManager.buildView(partyId, resolvePartyInfo)
+    : null;
+
+  sendToPlayer(p.socket, {
+    type: "party_update",
+    payload: { party },
+  });
+}
+
+/** Refreshes the party view for a list of player ids. */
+function refreshPartyFor(playerIds: string[]): void {
+  for (const id of playerIds) sendPartyUpdate(id);
+}
+
+/** Handles a request to invite another player (must share a room). */
+function handlePartyInviteSend(
+  player: Player,
+  socket: WebSocket,
+  targetName: string
+): void {
+  if (!player.character || !player.roomId) return;
+
+  // Find the target by name, in the same room, active
+  const target = getActivePlayersInRoom(player.roomId).find(
+    (p) =>
+      p.id !== player.id &&
+      (p.character?.name?.toLowerCase() ?? "") === targetName.trim().toLowerCase()
+  );
+
+  if (!target) {
     sendToPlayer(socket, {
       type: "system",
-      payload: { message: "Unknown message type." },
+      payload: { message: `No one named "${targetName}" is here.` },
     });
     return;
   }
 
-  const response = handleCommand(player.id, msg.payload.input);
-
-  if (response) {
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: response },
-    });
+  const error = partyManager.createInvite(player, target);
+  if (error) {
+    sendToPlayer(socket, { type: "system", payload: { message: error } });
+    return;
   }
 
-  // If the player moved, update the room panel
-  if (["north", "south", "east", "west"].includes(
-    msg.payload.input.trim().split(" ")[0]?.toLowerCase() ?? ""
-  )) {
-    sendRoomUpdate(player, socket);
+  // Notify the target of the invite
+  sendToPlayer(target.socket, {
+    type: "party_invite",
+    payload: {
+      partyId: partyManager.getPartyId(player.id) ?? `pending-${player.id}`,
+      fromName: player.character.name,
+      fromPlayerId: player.id,
+    },
+  });
+
+  sendToPlayer(socket, {
+    type: "system",
+    payload: { message: `You invited ${target.character?.name} to your party.` },
+  });
+}
+
+/** Handles accept/decline of a party invite. */
+function handlePartyInviteRespond(
+  player: Player,
+  socket: WebSocket,
+  fromPlayerId: string,
+  accept: boolean
+): void {
+  if (!accept) {
+    const inviter = getPlayerById(fromPlayerId);
+    if (inviter) {
+      sendToPlayer(inviter.socket, {
+        type: "system",
+        payload: {
+          message: `${player.character?.name ?? "Someone"} declined your invitation.`,
+        },
+      });
+    }
+    return;
+  }
+
+  const result = partyManager.acceptInvite(
+    player,
+    fromPlayerId,
+    (id) => getPlayerById(id)
+  );
+
+  if (result.error) {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: result.error },
+    });
+    return;
+  }
+
+  // Refresh everyone in the party
+  refreshPartyFor(result.affected);
+
+  // Migrate any solo quests held by members into the shared party owner
+  // key, so a quest someone accepted alone doesn't become orphaned once
+  // the game starts keying quests by party id. The leader (first id) is
+  // the party owner key after acceptInvite created/kept the party.
+  const newPartyId = partyManager.getPartyId(player.id);
+  if (newPartyId) {
+    for (const id of result.affected) {
+      if (id === newPartyId) continue; // already the party key
+      questManager.transferOwner(id, newPartyId);
+    }
+    // Push a refreshed board to everyone so the shared active quest shows
+    for (const id of result.affected) {
+      const p = getPlayerById(id);
+      if (p) sendQuestBoard(p, p.socket);
+    }
+  }
+
+  for (const id of result.affected) {
+    const p = getPlayerById(id);
+    if (p) {
+      sendToPlayer(p.socket, {
+        type: "system",
+        payload: {
+          message: `${player.character?.name ?? "A new member"} joined the party.`,
+        },
+      });
+    }
+  }
+}
+
+/** Handles a player leaving their party. */
+function handlePartyLeave(player: Player, socket: WebSocket): void {
+  // Capture the party id before leaving — the mapping is cleared by leave.
+  const partyIdBefore = partyManager.getPartyId(player.id);
+
+  const result = partyManager.leaveParty(player.id);
+
+  if (result.formerMembers.length === 0) {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: "You are not in a party." },
+    });
+    return;
+  }
+
+  // The leaver gets a cleared party view
+  sendToPlayer(socket, { type: "party_update", payload: { party: null } });
+  sendToPlayer(socket, {
+    type: "system",
+    payload: {
+      message: result.disbanded ? "The party has disbanded." : "You left the party.",
+    },
+  });
+
+  // Refresh remaining members (or clear them if disbanded)
+  if (result.disbanded) {
+    // The party's shared quest (if any) returns to the board so it isn't
+    // orphaned under a now-defunct party id. abandon() both removes it
+    // from the active map and puts it back on the board.
+    if (partyIdBefore) {
+      questManager.abandon(partyIdBefore);
+    }
+
+    for (const id of result.formerMembers) {
+      if (id === player.id) continue;
+      const p = getPlayerById(id);
+      if (p) {
+        sendToPlayer(p.socket, { type: "party_update", payload: { party: null } });
+        sendToPlayer(p.socket, {
+          type: "system",
+          payload: { message: "The party has disbanded." },
+        });
+        // Each ex-member now keys quests by their own id again; push a
+        // fresh board so their UI reflects the change.
+        sendQuestBoard(p, p.socket);
+      }
+    }
+    // The leaver too
+    sendQuestBoard(player, socket);
+  } else {
+    refreshPartyFor(result.stillInParty);
+  }
+}
+
+// ─────────────────────────────────────────────
+// QUEST HANDLERS
+// ─────────────────────────────────────────────
+
+/**
+ * Returns the quest "owner key" for a player: their party id if in a
+ * party, otherwise their own player id. Party members share a key so
+ * they share one active quest.
+ */
+function questOwnerKey(player: Player): string {
+  return partyManager.getPartyId(player.id) ?? player.id;
+}
+
+/** Sends the quest board snapshot to a player. */
+function sendQuestBoard(player: Player, socket: WebSocket): void {
+  const view = questManager.buildView(questOwnerKey(player));
+  sendToPlayer(socket, { type: "quest_board", payload: view });
+}
+
+/** Handles accepting a quest (solo or party). */
+function handleQuestAccept(
+  player: Player,
+  socket: WebSocket,
+  questId: string
+): void {
+  const partyId = partyManager.getPartyId(player.id);
+  const ownerKey = partyId ?? player.id;
+
+  const error = questManager.accept(ownerKey, questId, partyId !== null, partyId);
+  if (error) {
+    sendToPlayer(socket, { type: "system", payload: { message: error } });
+    sendQuestBoard(player, socket);
+    return;
+  }
+
+  // Notify all affected players (the whole party, or just the solo player)
+  const affected = partyId
+    ? partyManager.getPartyMemberIds(player.id)
+    : [player.id];
+
+  for (const id of affected) {
+    const p = getPlayerById(id);
+    if (!p) continue;
+    sendQuestBoard(p, p.socket);
+    sendToPlayer(p.socket, {
+      type: "system",
+      payload: {
+        message: `Quest accepted: ${questManager.getActive(ownerKey)?.quest.title ?? ""}`,
+      },
+    });
+  }
+}
+
+/** Handles abandoning the active quest. */
+function handleQuestAbandon(player: Player, socket: WebSocket): void {
+  const partyId = partyManager.getPartyId(player.id);
+  const ownerKey = partyId ?? player.id;
+
+  const error = questManager.abandon(ownerKey);
+  if (error) {
+    sendToPlayer(socket, { type: "system", payload: { message: error } });
+    return;
+  }
+
+  const affected = partyId
+    ? partyManager.getPartyMemberIds(player.id)
+    : [player.id];
+
+  for (const id of affected) {
+    const p = getPlayerById(id);
+    if (!p) continue;
+    sendQuestBoard(p, p.socket);
+    sendToPlayer(p.socket, {
+      type: "system",
+      payload: { message: "Quest abandoned." },
+    });
   }
 }
 
@@ -593,6 +954,9 @@ function sendRoomUpdate(player: Player, socket: WebSocket): void {
       description: room.description,
       exits: Object.keys(room.exits),
       players: occupants,
+      // Only include artKey when the room defines one — omitting (rather
+      // than sending undefined) satisfies exactOptionalPropertyTypes.
+      ...(room.artKey ? { artKey: room.artKey } : {}),
     },
   });
 }

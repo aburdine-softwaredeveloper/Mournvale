@@ -15,7 +15,14 @@
  */
 
 import { CommandMenu, DEFAULT_COMMANDS } from "../components/CommandMenu";
+import { PartyPanel } from "../components/PartyPanel";
+import { assetRegistry } from "../../engine/assets/AssetRegistry";
+import {
+  portraitCompositor,
+  type PortraitSpec,
+} from "../../engine/assets/PortraitCompositor";
 import type { RoomMessage } from "../../types/network";
+import type { PartyView } from "../../types/party";
 
 export type LogKind = "system" | "chat" | "error" | "presence" | "default";
 
@@ -29,9 +36,15 @@ export class GameScreen {
   private readonly messageLog: HTMLElement;
   private readonly commandInput: HTMLInputElement;
   private readonly commandSend: HTMLButtonElement;
+  private readonly headerPortrait: HTMLElement;
+  private readonly roomImage: HTMLElement;
 
   private readonly commandMenu: CommandMenu;
+  private readonly partyPanel: PartyPanel;
   private onCommand: ((input: string) => void) | null = null;
+
+  /** Tracks the last room art key so we don't re-fetch on every update */
+  private currentArtKey: string | null = null;
 
   constructor() {
     this.headerName = this.requireEl("player-name-display");
@@ -43,23 +56,44 @@ export class GameScreen {
     this.messageLog = this.requireEl("message-log");
     this.commandInput = this.requireEl("command-input") as HTMLInputElement;
     this.commandSend = this.requireEl("command-send") as HTMLButtonElement;
+    this.headerPortrait = this.requireEl("header-portrait");
+    this.roomImage = this.requireEl("room-image");
 
     this.commandMenu = new CommandMenu("command-buttons");
+    this.partyPanel = new PartyPanel();
     this.wireInput();
   }
 
+  /** Registers the leave-party handler on the party panel. */
+  public setPartyLeaveHandler(handler: () => void): void {
+    this.partyPanel.setLeaveHandler(handler);
+  }
+
+  /** Updates the party roster (or hides it when null). */
+  public updateParty(party: PartyView | null): void {
+    this.partyPanel.update(party);
+  }
+
   /**
-   * Initializes the screen with the player's identity and command set.
-   * @param onCommand callback invoked with every command string to send
+   * Initializes the screen with the player's identity, portrait, and
+   * command set.
+   * @param portraitSpec the visual fields used to composite the portrait
+   * @param onCommand    callback invoked with every command string to send
    */
   public init(
     playerName: string,
     playerClass: string,
+    portraitSpec: PortraitSpec | null,
     onCommand: (input: string) => void
   ): void {
     this.onCommand = onCommand;
     this.headerName.textContent = playerName;
     this.headerClass.textContent = playerClass.toUpperCase();
+
+    // Render the header portrait from the player's appearance
+    if (portraitSpec) {
+      void this.renderHeaderPortrait(portraitSpec);
+    }
 
     this.commandMenu.render(
       DEFAULT_COMMANDS,
@@ -70,16 +104,64 @@ export class GameScreen {
     );
   }
 
-  /** Updates the room panel from a RoomMessage */
+  /** Composites and injects the player's portrait into the header */
+  private async renderHeaderPortrait(spec: PortraitSpec): Promise<void> {
+    const svg = await portraitCompositor.compose(spec);
+    this.headerPortrait.innerHTML = svg;
+  }
+
+  /** Updates the room panel and image from a RoomMessage */
   public updateRoom(msg: RoomMessage): void {
-    const { name, description, exits, players } = msg.payload;
+    const { name, description, exits, players, artKey } = msg.payload;
 
     this.roomName.textContent = name;
     this.roomDesc.textContent = description;
-    this.roomExits.textContent = exits.length > 0 ? exits.join(", ") : "none";
+    this.roomExits.textContent =
+      exits.length > 0 ? `Exits: ${exits.join(", ")}` : "Exits: none";
 
     this.roomPlayers.textContent =
-      players.length > 0 ? players.join("\n") : "You are alone.";
+      players.length > 0 ? `Present: ${players.join(", ")}` : "You are alone.";
+
+    this.updateRoomImage(artKey);
+  }
+
+  /**
+   * Loads and displays the room's scene art. Skips the fetch if the art
+   * key hasn't changed since the last update. Shows a placeholder when a
+   * room has no art.
+   */
+  private updateRoomImage(artKey: string | undefined): void {
+    if (artKey === this.currentArtKey) return;
+    this.currentArtKey = artKey ?? null;
+
+    if (!artKey) {
+      this.roomImage.innerHTML =
+        '<div class="room-image-empty">— no view —</div>';
+      return;
+    }
+
+    const key = `tiles/${artKey}` as const;
+    const cached = assetRegistry.get(key);
+
+    if (cached) {
+      this.roomImage.innerHTML = cached;
+      return;
+    }
+
+    void assetRegistry
+      .load(key)
+      .then((svg) => {
+        // Guard against a newer room having loaded while we awaited
+        if (this.currentArtKey === artKey) {
+          this.roomImage.innerHTML = svg;
+        }
+      })
+      .catch(() => {
+        if (this.currentArtKey === artKey) {
+          this.roomImage.innerHTML =
+            '<div class="room-image-empty">— no view —</div>';
+        }
+      });
   }
 
   /** Appends a line to the message log and scrolls to the bottom */

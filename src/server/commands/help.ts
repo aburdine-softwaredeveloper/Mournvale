@@ -11,6 +11,10 @@ export function help(): string {
     "  say <message>   — speak to others in the room",
     "  north / south   — move in a direction",
     "  east / west     — move in a direction",
+    "  invite <name>   — invite someone to your party",
+    "  party           — show your party",
+    "  leave           — leave your party",
+    "  quests          — read the quest board",
     "  help            — show this list",
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
   ].join("\n");

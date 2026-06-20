@@ -115,11 +115,12 @@ export class AssetRegistry {
   }
 
   /**
-   * Convenience: builds the portrait asset key for a character class.
-   * Centralizes the class→asset mapping so callers never hardcode paths.
+   * Convenience: builds the headgear asset key for a character class.
+   * Portraits are now composited (see PortraitCompositor); this returns
+   * just the class headgear layer, used as a quick single-layer preview.
    */
-  public portraitKey(characterClass: string): AssetKey {
-    return `characters/${characterClass.toLowerCase()}`;
+  public headgearKey(characterClass: string): AssetKey {
+    return `characters/headgear/${characterClass.toLowerCase()}`;
   }
 }
 
@@ -138,12 +139,47 @@ export const assetRegistry = new AssetRegistry();
  * Keeping this here (not scattered) means adding a class is a one-line
  * change. Used to preload all portraits before character creation.
  */
-export const CHARACTER_PORTRAIT_KEYS: AssetKey[] = [
-  "characters/knight",
-  "characters/healer",
-  "characters/warrior",
-  "characters/monk",
-  "characters/mage",
-  "characters/thief",
-  "characters/archer",
+/**
+ * The canonical lists of portrait LAYER keys. Portraits are composited
+ * from these layers (see PortraitCompositor) rather than stored as flat
+ * per-combination images — there are 1000+ possible combinations, so we
+ * stack a handful of layers instead.
+ *
+ * Adding a hair style or class is a one-line change here plus the SVG.
+ */
+export const PORTRAIT_BASE_KEYS: AssetKey[] = [
+  "characters/base/male",
+  "characters/base/female",
+];
+
+export const PORTRAIT_HAIR_KEYS: AssetKey[] = [
+  "characters/hair/short",
+  "characters/hair/long",
+  "characters/hair/braided",
+  "characters/hair/shaved",
+  "characters/hair/curly",
+  "characters/hair/ponytail",
+];
+
+export const PORTRAIT_HEADGEAR_KEYS: AssetKey[] = [
+  "characters/headgear/knight",
+  "characters/headgear/healer",
+  "characters/headgear/warrior",
+  "characters/headgear/monk",
+  "characters/headgear/mage",
+  "characters/headgear/thief",
+  "characters/headgear/archer",
+];
+
+export const PORTRAIT_GLASSES_KEY: AssetKey = "characters/glasses/glasses";
+
+/**
+ * All portrait layer keys — preload this whole set before character
+ * creation so any composite is instant.
+ */
+export const ALL_PORTRAIT_LAYER_KEYS: AssetKey[] = [
+  ...PORTRAIT_BASE_KEYS,
+  ...PORTRAIT_HAIR_KEYS,
+  ...PORTRAIT_HEADGEAR_KEYS,
+  PORTRAIT_GLASSES_KEY,
 ];

@@ -30,6 +30,7 @@ export const rooms: Record<string, Room> = {
       "A dimly lit tavern filled with the smell of ale and wet wood. " +
       "Candles flicker on rough-hewn tables. Behind the bar, the keeper " +
       "eyes you with a weathered curiosity.",
+    artKey: "tavern",
     exits: {
       north: "street",
     },
@@ -41,6 +42,7 @@ export const rooms: Record<string, Room> = {
     description:
       "A narrow street outside the tavern. Iron lanterns flicker in the fog. " +
       "The cobblestones glisten with recent rain.",
+    artKey: "street",
     exits: {
       south: "tavern",
     },

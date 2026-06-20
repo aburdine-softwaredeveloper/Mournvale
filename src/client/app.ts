@@ -23,6 +23,9 @@ import { MainMenuScreen } from "./screens/MainMenuScreen";
 import { IntroScreen } from "./screens/IntroScreen";
 import { CharacterCreationScreen } from "./screens/CharacterCreationScreen";
 import { GameScreen } from "./screens/GameScreen";
+import { QuestBoard } from "./components/QuestBoard";
+import { InvitePrompt } from "./components/InvitePrompt";
+import type { PortraitSpec } from "../engine/assets/PortraitCompositor";
 import type {
   ServerMessage,
   ClientMessage,
@@ -42,9 +45,17 @@ class MournvaleClient {
   private readonly intro = new IntroScreen();
   private readonly creation = new CharacterCreationScreen();
   private readonly game = new GameScreen();
+  private readonly questBoard = new QuestBoard();
+  private readonly invitePrompt = new InvitePrompt();
 
   /** Buffers character draft locally for the final character_create send */
   private draft: Record<string, string> = {};
+
+  /**
+   * The confirmed portrait spec, cached from character_confirmed and used
+   * to render the header portrait when the game screen activates.
+   */
+  private portraitSpec: PortraitSpec | null = null;
 
   /** This browser's persistent player identity (from localStorage) */
   private playerId: string = "";
@@ -69,6 +80,33 @@ class MournvaleClient {
     // Wire the creation screen's choice handler
     this.creation.setChoiceHandler((step, value) => {
       this.handleCreationChoice(step, value);
+    });
+
+    // Wire the party panel's Leave button
+    this.game.setPartyLeaveHandler(() => {
+      this.send({ type: "party_leave", payload: {} });
+    });
+
+    // Wire the quest board's accept / abandon / close
+    this.questBoard.setHandlers({
+      onAccept: (questId) =>
+        this.send({ type: "quest_accept", payload: { questId } }),
+      onAbandon: () => this.send({ type: "quest_abandon", payload: {} }),
+      onClose: () => {
+        /* board just hides; no server message needed */
+      },
+    });
+
+    // Wire the invite prompt's Accept / Decline
+    this.invitePrompt.setRespondHandler((invite, accept) => {
+      this.send({
+        type: "party_invite_respond",
+        payload: {
+          partyId: invite.partyId,
+          fromPlayerId: invite.fromPlayerId,
+          accept,
+        },
+      });
     });
   }
 
@@ -168,9 +206,16 @@ class MournvaleClient {
         break;
 
       case "character_confirmed":
-        // Cache identity for the game header
+        // Cache identity + appearance for the game header portrait
         this.draft.name = msg.payload.name;
         this.draft.characterClass = msg.payload.characterClass;
+        this.portraitSpec = {
+          gender: msg.payload.gender,
+          characterClass: msg.payload.characterClass,
+          hairStyle: msg.payload.hairStyle,
+          hairColor: msg.payload.hairColor,
+          glasses: msg.payload.glasses,
+        };
         break;
 
       case "room":
@@ -198,6 +243,22 @@ class MournvaleClient {
       case "save_result":
         // Log the result; the subsequent slot_list refreshes the menu
         this.game.log(msg.payload.message, "system");
+        break;
+
+      case "party_update":
+        // Refresh the party roster (null hides it)
+        this.game.updateParty(msg.payload.party);
+        break;
+
+      case "party_invite":
+        // Show the accept/decline prompt
+        this.invitePrompt.show(msg.payload);
+        break;
+
+      case "quest_board":
+        // Render the board and open it if it isn't already showing
+        this.questBoard.render(msg.payload);
+        this.questBoard.show();
         break;
     }
   }
@@ -231,14 +292,57 @@ class MournvaleClient {
         break;
 
       case "active":
-        // Initialize the game screen with the player's identity
+        // Initialize the game screen with the player's identity + portrait
         this.game.init(
           this.draft.name ?? "Adventurer",
           this.draft.characterClass ?? "",
-          (input) => this.send({ type: "command", payload: { input } })
+          this.portraitSpec,
+          (input) => this.handleGameCommand(input)
         );
         this.screens.show("game");
         break;
+    }
+  }
+
+  /**
+   * Dispatches a command typed (or clicked) in the game screen. Most
+   * commands are sent to the server as a raw `command` string, but the
+   * party/quest verbs translate into structured messages instead, since
+   * those drive dedicated client UI. Everything else falls through to the
+   * server's command handler (look, move, say, help, etc.).
+   */
+  private handleGameCommand(input: string): void {
+    const trimmed = input.trim();
+    const [verb, ...rest] = trimmed.split(" ");
+    const arg = rest.join(" ").trim();
+
+    switch (verb?.toLowerCase()) {
+      case "party":
+        // No structured "show party" message — the roster is already live
+        // via party_update. Just log a hint if not in a party.
+        this.game.log("Your party roster is shown in the LOCATION panel.", "system");
+        return;
+
+      case "leave":
+        this.send({ type: "party_leave", payload: {} });
+        return;
+
+      case "invite":
+        if (!arg) {
+          this.game.log("Invite whom? Try: invite <name>", "system");
+          return;
+        }
+        this.send({ type: "party_invite_send", payload: { targetName: arg } });
+        return;
+
+      case "quests":
+      case "quest":
+        // Request the board; the response opens the overlay
+        this.send({ type: "quest_board_request", payload: {} });
+        return;
+
+      default:
+        this.send({ type: "command", payload: { input: trimmed } });
     }
   }
 

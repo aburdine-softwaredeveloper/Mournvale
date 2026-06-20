@@ -102,33 +102,40 @@
   ════════════════════════════════════════ -->
   <div id="screen-game" class="screen hidden">
 
-    <!-- Top bar -->
+    <!-- Top bar: portrait + identity -->
     <header id="game-header" class="snes-panel">
-      <span id="player-name-display">Mournvale</span>
-      <span id="player-class-display"></span>
+      <div id="header-portrait" class="header-portrait"></div>
+      <div id="header-identity">
+        <span id="player-name-display">Mournvale</span>
+        <span id="player-class-display"></span>
+      </div>
     </header>
 
-    <!-- Main content: room + log side by side on wide screens -->
+    <!-- Main content: room image (center) | log (right), 50/50 -->
     <div id="game-body">
 
-      <!-- Left panel: room info -->
-      <div id="room-panel" class="snes-panel">
+      <!-- Left half: square room image + room info beneath -->
+      <div id="room-image-panel" class="snes-panel">
         <div class="panel-title">◆ LOCATION</div>
+        <div id="room-image" class="room-image"></div>
         <div id="room-name" class="room-name-text">—</div>
         <div id="room-description" class="room-desc-text"></div>
-
-        <div class="panel-divider"></div>
-
-        <div class="panel-title">◆ EXITS</div>
-        <div id="room-exits" class="room-exits-text">—</div>
-
-        <div class="panel-divider"></div>
-
-        <div class="panel-title">◆ PRESENT</div>
+        <div class="room-meta">
+          <span id="room-exits" class="room-exits-text">—</span>
+        </div>
         <div id="room-players" class="room-players-text">You are alone.</div>
+
+        <div class="panel-divider"></div>
+
+        <!-- Party roster — hidden until in a party -->
+        <div id="party-roster" class="hidden">
+          <div class="panel-title">◆ PARTY</div>
+          <div id="party-members" class="party-members-text"></div>
+          <button id="party-leave-btn" class="snes-btn party-leave">LEAVE PARTY</button>
+        </div>
       </div>
 
-      <!-- Right panel: message log -->
+      <!-- Right half: message log -->
       <div id="log-panel" class="snes-panel">
         <div class="panel-title">◆ LOG</div>
         <div id="message-log"></div>
@@ -158,6 +165,30 @@
         <button id="command-send" class="snes-btn">SEND</button>
       </div>
 
+    </div>
+
+    <!-- Quest board overlay — hidden until opened -->
+    <div id="quest-overlay" class="overlay hidden">
+      <div id="quest-board" class="snes-panel overlay-panel">
+        <div class="overlay-header">
+          <span class="panel-title">◆ QUEST BOARD</span>
+          <button id="quest-close-btn" class="snes-btn">✕</button>
+        </div>
+        <div id="quest-active" class="quest-active hidden"></div>
+        <div id="quest-list" class="quest-list"></div>
+      </div>
+    </div>
+
+    <!-- Party invite prompt — hidden until an invite arrives -->
+    <div id="invite-overlay" class="overlay hidden">
+      <div id="invite-prompt" class="snes-panel overlay-panel invite-panel">
+        <div class="panel-title">◆ PARTY INVITE</div>
+        <div id="invite-text" class="invite-text"></div>
+        <div class="invite-actions">
+          <button id="invite-accept-btn" class="snes-btn">ACCEPT</button>
+          <button id="invite-decline-btn" class="snes-btn">DECLINE</button>
+        </div>
+      </div>
     </div>
 
   </div>

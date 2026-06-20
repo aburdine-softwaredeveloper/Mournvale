@@ -17,8 +17,12 @@
 import { typewrite, type TypewriterController } from "../util/typewriter";
 import {
   assetRegistry,
-  CHARACTER_PORTRAIT_KEYS,
+  ALL_PORTRAIT_LAYER_KEYS,
 } from "../../engine/assets/AssetRegistry";
+import {
+  portraitCompositor,
+  type PortraitSpec,
+} from "../../engine/assets/PortraitCompositor";
 import type {
   DialogueMessage,
   CharacterCreationStep,
@@ -39,6 +43,12 @@ export class CharacterCreationScreen {
   private activeTypewriter: TypewriterController | null = null;
   private currentStep: CharacterCreationStep | null = null;
 
+  /**
+   * Local copy of creation choices, used only to build the live portrait
+   * preview. The server remains authoritative for the actual character.
+   */
+  private previewSpec: Partial<PortraitSpec> = {};
+
   /** Invoked when the player makes a selection or submits their name */
   private onChoice: ((step: CharacterCreationStep, value: string) => void) | null = null;
 
@@ -56,10 +66,9 @@ export class CharacterCreationScreen {
 
     this.wireNameInput();
 
-    // Preload all class portraits in the background so they're ready
-    // the moment the player reaches the class step. Fire-and-forget;
-    // a failed preload just means a blank frame, not a crash.
-    void assetRegistry.preload(CHARACTER_PORTRAIT_KEYS);
+    // Preload all portrait layers so composites are instant once the
+    // player starts answering. Fire-and-forget.
+    void assetRegistry.preload(ALL_PORTRAIT_LAYER_KEYS);
   }
 
   /** Registers the callback used to report player answers to the app */
@@ -82,8 +91,13 @@ export class CharacterCreationScreen {
     // Reset UI — hide both interactive panels until typing finishes
     this.choicesPanel.classList.add("hidden");
     this.inputBox.classList.add("hidden");
-    // Hide the portrait by default; the class step re-shows it on hover
-    this.portraitFrame.classList.add("hidden");
+    // Once the player has made any visual choice, keep the portrait
+    // visible (showing the accumulated look). Before that, hide it.
+    if (this.hasVisualData()) {
+      this.renderPortrait(this.previewSpec);
+    } else {
+      this.portraitFrame.classList.add("hidden");
+    }
 
     this.speakerEl.textContent = speaker;
 
@@ -129,9 +143,9 @@ export class CharacterCreationScreen {
         }
       });
 
-      // On the class step, previewing a choice shows its portrait
-      if (step === "class") {
-        const preview = () => this.showPortrait(choice.value);
+      // For visual steps, hovering/focusing a choice previews it live
+      if (this.isVisualStep(step)) {
+        const preview = () => this.previewChoice(step, choice.value);
         li.addEventListener("mouseenter", preview);
         li.addEventListener("focus", preview);
       }
@@ -141,39 +155,111 @@ export class CharacterCreationScreen {
       // Focus the first option for keyboard navigation
       if (i === 0) {
         li.focus();
-        // Prime the portrait with the first class so the frame isn't empty
-        if (step === "class") this.showPortrait(choice.value);
+        // Prime the preview with the first option so the frame isn't empty
+        if (this.isVisualStep(step)) this.previewChoice(step, choice.value);
       }
     });
 
     this.choicesPanel.classList.remove("hidden");
   }
 
-  /**
-   * Shows the portrait for a given class in the preview frame.
-   * Pulls the SVG markup from the AssetRegistry (already preloaded) and
-   * injects it inline. If the asset isn't ready, the frame stays hidden.
-   */
-  private showPortrait(characterClass: string): void {
-    const key = assetRegistry.portraitKey(characterClass);
-    const svg = assetRegistry.get(key);
+  /** True if any visual attribute has been chosen yet */
+  private hasVisualData(): boolean {
+    return (
+      this.previewSpec.gender !== undefined ||
+      this.previewSpec.characterClass !== undefined ||
+      this.previewSpec.hairStyle !== undefined ||
+      this.previewSpec.hairColor !== undefined ||
+      this.previewSpec.glasses !== undefined
+    );
+  }
 
-    if (!svg) {
-      // Not loaded yet — try to load, then show when ready
-      void assetRegistry.load(key).then((markup) => {
-        // Only apply if we're still on this class preview
-        this.portraitImg.innerHTML = markup;
-        this.portraitLabel.textContent = characterClass;
-        this.portraitFrame.classList.remove("hidden");
-      }).catch(() => {
-        /* missing portrait — leave frame hidden */
-      });
+  /** True for steps that affect the portrait's appearance */
+  private isVisualStep(step: CharacterCreationStep | undefined): boolean {
+    return (
+      step === "gender" ||
+      step === "class" ||
+      step === "hair_style" ||
+      step === "hair_color" ||
+      step === "glasses"
+    );
+  }
+
+  /**
+   * Updates the preview spec with a tentative choice (hover/focus) and
+   * re-renders the portrait. This does not commit anything — the value
+   * is only locked in when the player actually selects it (submit()).
+   */
+  private previewChoice(
+    step: CharacterCreationStep | undefined,
+    value: string
+  ): void {
+    const spec = { ...this.previewSpec };
+    this.applyToSpec(spec, step, value);
+    this.renderPortrait(spec);
+  }
+
+  /** Writes a step's value into a portrait spec object */
+  private applyToSpec(
+    spec: Partial<PortraitSpec>,
+    step: CharacterCreationStep | undefined,
+    value: string
+  ): void {
+    switch (step) {
+      case "gender":
+        spec.gender = value as PortraitSpec["gender"];
+        break;
+      case "class":
+        spec.characterClass = value;
+        break;
+      case "hair_style":
+        spec.hairStyle = value;
+        break;
+      case "hair_color":
+        spec.hairColor = value;
+        break;
+      case "glasses":
+        spec.glasses = value === "true";
+        break;
+    }
+  }
+
+  /**
+   * Renders a portrait from a (possibly partial) spec. Fills in sensible
+   * defaults for any not-yet-chosen fields so the preview is always
+   * drawable — e.g. before class is picked we still show a face + hair.
+   */
+  private renderPortrait(spec: Partial<PortraitSpec>): void {
+    const full: PortraitSpec = {
+      gender: spec.gender ?? "Male",
+      characterClass: spec.characterClass ?? "monk", // least-covering headgear
+      hairStyle: spec.hairStyle ?? "short",
+      hairColor: spec.hairColor ?? "Brown",
+      glasses: spec.glasses ?? false,
+    };
+
+    const svg = portraitCompositor.composeSync(full);
+
+    if (svg) {
+      this.portraitImg.innerHTML = svg;
+      this.portraitFrame.classList.remove("hidden");
+      this.updatePortraitLabel(spec);
       return;
     }
 
-    this.portraitImg.innerHTML = svg;
-    this.portraitLabel.textContent = characterClass;
-    this.portraitFrame.classList.remove("hidden");
+    // Layers not cached yet — compose async, then show
+    void portraitCompositor.compose(full).then((markup) => {
+      this.portraitImg.innerHTML = markup;
+      this.portraitFrame.classList.remove("hidden");
+      this.updatePortraitLabel(spec);
+    });
+  }
+
+  /** Sets the portrait caption from whatever has been chosen so far */
+  private updatePortraitLabel(spec: Partial<PortraitSpec>): void {
+    this.portraitLabel.textContent = spec.characterClass
+      ? spec.characterClass
+      : "Adventurer";
   }
 
   /** Shows the free-text name input */
@@ -204,6 +290,18 @@ export class CharacterCreationScreen {
 
   /** Reports a selection to the app and clears interactive UI */
   private submit(step: CharacterCreationStep, value: string): void {
+    // Lock the choice into the preview spec so the portrait persists and
+    // accumulates across steps (gender → class → hair → color → glasses).
+    if (this.isVisualStep(step)) {
+      this.applyToSpec(this.previewSpec, step, value);
+      this.renderPortrait(this.previewSpec);
+    }
+
+    // On restart, clear the accumulated preview
+    if (step === "confirm" && value === "restart") {
+      this.previewSpec = {};
+    }
+
     this.choicesPanel.classList.add("hidden");
     this.inputBox.classList.add("hidden");
     this.onChoice?.(step, value);

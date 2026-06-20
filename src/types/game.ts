@@ -100,4 +100,9 @@ export interface Room {
   name: string;
   description: string;
   exits: Partial<Record<Direction, string>>;
+  /**
+   * Optional art asset key for the room scene. Maps to tiles/{artKey}.svg
+   * via the AssetRegistry. Rooms without art show a placeholder.
+   */
+  artKey?: string;
 }
