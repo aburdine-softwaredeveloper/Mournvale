@@ -27,13 +27,13 @@ import type { CharacterData } from "../../types/game";
 const SPEAKER = "Aldric the Barkeep";
 
 const CLASS_CHOICES: DialogueChoice[] = [
-  { label: "⚔️  Knight",  value: "Knight"  },
-  { label: "💚  Healer",  value: "Healer"  },
-  { label: "👊  Fighter", value: "Fighter" },
-  { label: "🙏  Monk",    value: "Monk"    },
-  { label: "🔮  Mage",    value: "Mage"    },
-  { label: "🗡️  Thief",   value: "Thief"   },
-  { label: "🏹  Archer",  value: "Archer"  },
+  { label: "[+] Knight",  value: "Knight"  },
+  { label: "[*] Healer",  value: "Healer"  },
+  { label: "[X] Warrior", value: "Warrior" },
+  { label: "[o] Monk",    value: "Monk"    },
+  { label: "[~] Mage",    value: "Mage"    },
+  { label: "[/] Thief",   value: "Thief"   },
+  { label: "[>] Archer",  value: "Archer"  },
 ];
 
 const GENDER_CHOICES: DialogueChoice[] = [
@@ -252,7 +252,7 @@ export function applyAnswer(
 
     case "class": {
       const validClasses: CharacterClass[] = [
-        "Knight", "Healer", "Fighter", "Monk", "Mage", "Thief", "Archer",
+        "Knight", "Healer", "Warrior", "Monk", "Mage", "Thief", "Archer",
       ];
       if (!validClasses.includes(value as CharacterClass)) {
         return "Please choose a valid class.";

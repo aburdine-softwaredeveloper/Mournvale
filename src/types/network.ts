@@ -201,7 +201,7 @@ export type CharacterCreationStep =
 export type CharacterClass =
   | "Knight"
   | "Healer"
-  | "Fighter"
+  | "Warrior"
   | "Monk"
   | "Mage"
   | "Thief"

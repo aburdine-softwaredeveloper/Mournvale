@@ -15,6 +15,10 @@
  */
 
 import { typewrite, type TypewriterController } from "../util/typewriter";
+import {
+  assetRegistry,
+  CHARACTER_PORTRAIT_KEYS,
+} from "../../engine/assets/AssetRegistry";
 import type {
   DialogueMessage,
   CharacterCreationStep,
@@ -28,6 +32,9 @@ export class CharacterCreationScreen {
   private readonly inputBox: HTMLElement;
   private readonly nameInput: HTMLInputElement;
   private readonly nameConfirm: HTMLButtonElement;
+  private readonly portraitFrame: HTMLElement;
+  private readonly portraitImg: HTMLElement;
+  private readonly portraitLabel: HTMLElement;
 
   private activeTypewriter: TypewriterController | null = null;
   private currentStep: CharacterCreationStep | null = null;
@@ -43,8 +50,16 @@ export class CharacterCreationScreen {
     this.inputBox = this.requireEl("creation-input-box");
     this.nameInput = this.requireEl("creation-name-input") as HTMLInputElement;
     this.nameConfirm = this.requireEl("creation-name-confirm") as HTMLButtonElement;
+    this.portraitFrame = this.requireEl("creation-portrait");
+    this.portraitImg = this.requireEl("creation-portrait-img");
+    this.portraitLabel = this.requireEl("creation-portrait-label");
 
     this.wireNameInput();
+
+    // Preload all class portraits in the background so they're ready
+    // the moment the player reaches the class step. Fire-and-forget;
+    // a failed preload just means a blank frame, not a crash.
+    void assetRegistry.preload(CHARACTER_PORTRAIT_KEYS);
   }
 
   /** Registers the callback used to report player answers to the app */
@@ -67,6 +82,8 @@ export class CharacterCreationScreen {
     // Reset UI — hide both interactive panels until typing finishes
     this.choicesPanel.classList.add("hidden");
     this.inputBox.classList.add("hidden");
+    // Hide the portrait by default; the class step re-shows it on hover
+    this.portraitFrame.classList.add("hidden");
 
     this.speakerEl.textContent = speaker;
 
@@ -112,13 +129,51 @@ export class CharacterCreationScreen {
         }
       });
 
+      // On the class step, previewing a choice shows its portrait
+      if (step === "class") {
+        const preview = () => this.showPortrait(choice.value);
+        li.addEventListener("mouseenter", preview);
+        li.addEventListener("focus", preview);
+      }
+
       this.choiceList.appendChild(li);
 
       // Focus the first option for keyboard navigation
-      if (i === 0) li.focus();
+      if (i === 0) {
+        li.focus();
+        // Prime the portrait with the first class so the frame isn't empty
+        if (step === "class") this.showPortrait(choice.value);
+      }
     });
 
     this.choicesPanel.classList.remove("hidden");
+  }
+
+  /**
+   * Shows the portrait for a given class in the preview frame.
+   * Pulls the SVG markup from the AssetRegistry (already preloaded) and
+   * injects it inline. If the asset isn't ready, the frame stays hidden.
+   */
+  private showPortrait(characterClass: string): void {
+    const key = assetRegistry.portraitKey(characterClass);
+    const svg = assetRegistry.get(key);
+
+    if (!svg) {
+      // Not loaded yet — try to load, then show when ready
+      void assetRegistry.load(key).then((markup) => {
+        // Only apply if we're still on this class preview
+        this.portraitImg.innerHTML = markup;
+        this.portraitLabel.textContent = characterClass;
+        this.portraitFrame.classList.remove("hidden");
+      }).catch(() => {
+        /* missing portrait — leave frame hidden */
+      });
+      return;
+    }
+
+    this.portraitImg.innerHTML = svg;
+    this.portraitLabel.textContent = characterClass;
+    this.portraitFrame.classList.remove("hidden");
   }
 
   /** Shows the free-text name input */
