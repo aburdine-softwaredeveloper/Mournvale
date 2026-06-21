@@ -1,0 +1,182 @@
+/**
+ * combat.ts — Type system for Phase 3 tactical grid combat
+ *
+ * This module defines the full state machine for an encounter:
+ *   planning → (all players submit) → resolving → (events broadcast) → planning …
+ * until one side is eliminated, at which point phase = 'complete'.
+ *
+ * These types are intentionally free of any imports from network.ts to
+ * prevent circular dependencies. Network message wrappers live in
+ * network.ts and import from here.
+ */
+
+import type { CharacterStats, Condition, Weapon } from "./character";
+
+// ─── Grid ─────────────────────────────────────────────────────────────────────
+
+export const GRID_COLS = 8;
+export const GRID_ROWS = 8;
+
+export interface GridPosition {
+  x: number;  // 0-indexed column, 0 = left
+  y: number;  // 0-indexed row,    0 = top
+}
+
+export type GridCellType = "floor" | "wall" | "obstacle" | "door";
+
+export interface GridCell {
+  type: GridCellType;
+  passable: boolean;
+  /** Id of entity currently occupying this cell, if any. */
+  entityId?: string;
+}
+
+// ─── Entities ─────────────────────────────────────────────────────────────────
+
+export interface CombatEntity {
+  id: string;
+  name: string;
+  type: "player" | "enemy";
+  /** Populated for player-controlled entities. */
+  playerId?: string;
+  position: GridPosition;
+  hp: number;
+  maxHp: number;
+  /** Full stat block — includes AC, speed, weapon, ability scores. */
+  stats: CharacterStats;
+  /** Rolled at combat start via SkillEngine.rollInitiative. */
+  initiative: number;
+  conditions: Condition[];
+  /** Remaining uses per ability id; 0 = on cooldown. */
+  abilityUses: Record<string, number>;
+  isDead: boolean;
+}
+
+/** Lean per-player view of an entity sent over the network. */
+export interface CombatEntityView {
+  id: string;
+  name: string;
+  type: "player" | "enemy";
+  playerId?: string;
+  position: GridPosition;
+  hp: number;
+  maxHp: number;
+  ac: number;
+  speed: number;
+  initiative: number;
+  conditions: Condition[];
+  isDead: boolean;
+  /** Only present for the receiving player's own entity. */
+  weapon?: Weapon;
+  abilities?: AbilityStatus[];
+}
+
+export interface AbilityStatus {
+  id: string;
+  name: string;
+  description: string;
+  cooldownRounds: number;
+  /** 0 = on cooldown. */
+  usesLeft: number;
+  targetType?: "self" | "enemy" | "ally";
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+
+export type CombatActionType = "attack" | "ability" | "dodge" | "end_turn";
+
+/**
+ * Submitted during the planning phase — one per entity per round.
+ * Both `move` and `action` are optional so players can choose to only
+ * move, only act, or skip either.
+ */
+export interface CombatActionSubmission {
+  entityId: string;
+  /** Desired destination tile. Server validates range and path. */
+  move?: GridPosition;
+  action?: {
+    type: CombatActionType;
+    targetEntityId?: string;
+    abilityId?: string;
+  };
+}
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+//
+// Events are the atomic units of a resolved round. The server emits them
+// in initiative order; the client replays them sequentially to animate
+// the outcome.
+
+export type CombatEventType =
+  | "move"
+  | "attack_roll"
+  | "attack_hit"
+  | "attack_crit"
+  | "attack_miss"
+  | "damage"
+  | "heal"
+  | "ability_used"
+  | "condition_applied"
+  | "condition_removed"
+  | "burn_damage"
+  | "entity_dies"
+  | "combat_ends";
+
+export interface CombatEvent {
+  type: CombatEventType;
+  round: number;
+  entityId: string;
+  targetId?: string;
+  roll?: {
+    d20: number;
+    modifier: number;
+    total: number;
+    /** AC for attack rolls, save DC for ability checks. */
+    dc?: number;
+  };
+  /** Damage or heal amount. */
+  value?: number;
+  /** Destination for move events. */
+  position?: GridPosition;
+  abilityId?: string;
+  condition?: Condition;
+  /** Human-readable log line for the combat log panel. */
+  text: string;
+}
+
+// ─── Combat state ─────────────────────────────────────────────────────────────
+
+export type CombatPhase = "planning" | "resolving" | "complete";
+export type CombatOutcome = "players_win" | "players_lose" | "fled";
+
+/** Full authoritative server state — never sent to clients directly. */
+export interface CombatState {
+  id: string;
+  roomId: string;
+  round: number;
+  phase: CombatPhase;
+  entities: CombatEntity[];
+  /** [row][col] — y is the row index, x is the column index. */
+  grid: GridCell[][];
+  /** Entity ids sorted by initiative (descending). */
+  initiativeOrder: string[];
+  /** Entity ids of players who haven't yet submitted for this round. */
+  pendingSubmissions: string[];
+  /** Keyed by entityId — filled during planning, cleared after resolution. */
+  submissions: Record<string, CombatActionSubmission>;
+  eventLog: CombatEvent[];
+  outcome?: CombatOutcome;
+}
+
+/** Lean board view broadcast to each connected player. */
+export interface CombatStateView {
+  id: string;
+  roomId: string;
+  round: number;
+  phase: CombatPhase;
+  entities: CombatEntityView[];
+  grid: GridCell[][];
+  initiativeOrder: string[];
+  /** The receiving player's entity id — lets the client know which token to control. */
+  myEntityId?: string;
+}

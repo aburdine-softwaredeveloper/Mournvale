@@ -5,10 +5,13 @@
  * keeps placement, listing, and interaction uniform while allowing
  * role-specific behavior (vendors have stock, quest-givers have quests).
  *
- * NPCs are static world data placed by roomId. The WorldManager answers
- * "which NPCs are in room X." Clients receive a lightweight NpcView for
- * the room's "Here" list.
+ * Phase 2 additions: TalkIntent, DialogueBranch, and DialogueOutcome
+ * power the skill-check dialogue system. NPCs optionally define
+ * `dialogueBranches` — if present, talking with an intent triggers a
+ * d20 skill check and returns one of four outcome-keyed NPC lines.
  */
+
+// ─── NPC roles ────────────────────────────────────────────────────────────────
 
 /** What kind of NPC this is — drives interaction options. */
 export type NpcRole =
@@ -16,15 +19,65 @@ export type NpcRole =
   | "vendor"     // sells goods
   | "questgiver" // offers quests
   | "friendly"   // ambient friendly townsfolk
-  | "hostile";   // hostile presence (combat hook for later)
+  | "hostile";   // hostile presence (triggers combat)
 
-/** A line (or branching set) the NPC can say when talked to. */
+// ─── Talk intents (Phase 2) ───────────────────────────────────────────────────
+
+/** The approach a player uses when initiating a skilled conversation. */
+export type TalkIntent = "persuade" | "intimidate" | "inquire" | "deceive";
+
+/** Maps each intent to the skill rolled against the NPC's DC. */
+export const TALK_INTENT_SKILL: Record<TalkIntent, string> = {
+  persuade:   "persuasion",
+  intimidate: "intimidation",
+  inquire:    "insight",
+  deceive:    "deception",
+};
+
+/** Human-readable label used in the client intent-picker UI. */
+export const TALK_INTENT_LABEL: Record<TalkIntent, string> = {
+  persuade:   "Persuade",
+  intimidate: "Intimidate",
+  inquire:    "Inquire",
+  deceive:    "Deceive",
+};
+
+// ─── Dialogue outcomes (Phase 2) ──────────────────────────────────────────────
+
+/** The four result tiers of a skill check (mirrors SkillEngine.CheckTier). */
+export type DialogueOutcome = "crit_fail" | "fail" | "success" | "crit_success";
+
+/** What happens when a player achieves a particular outcome tier. */
+export interface DialogueOutcomeData {
+  /** The NPC's spoken response for this tier. */
+  npcLine: string;
+  /** Optional: unlocks this quest for the player (by quest id). */
+  questUnlock?: string;
+  /** Optional: reveals a piece of world lore displayed to the player. */
+  infoReveal?: string;
+  /** Optional: changes the NPC's stance toward the player. */
+  standing?: "hostile" | "neutral" | "friendly";
+}
+
+/**
+ * One full intent branch: the DC the player must beat, and what the NPC
+ * says on each of the four outcome tiers.
+ */
+export interface DialogueBranch {
+  intent: TalkIntent;
+  /** Difficulty class the player's skill check is compared against. */
+  dc: number;
+  outcomes: Record<DialogueOutcome, DialogueOutcomeData>;
+}
+
+// ─── Base NPC data ────────────────────────────────────────────────────────────
+
+/** A single line the NPC can say. */
 export interface NpcDialogue {
-  /** What the NPC says */
   text: string;
 }
 
-/** A single item a vendor sells. Combat/economy come later; this is data-ready. */
+/** A single item a vendor sells. */
 export interface VendorItem {
   id: string;
   name: string;
@@ -35,11 +88,10 @@ export interface VendorItem {
 /**
  * The full NPC definition — static world data.
  *
- * Role-specific fields are optional and only meaningful for that role:
- *   - questIds  → questgiver
- *   - stock     → vendor
- * Keeping them optional on one interface (rather than a union) makes
- * placement and listing code simpler; the role tells you what to read.
+ * Role-specific fields are optional:
+ *   - questIds        → questgiver
+ *   - stock           → vendor
+ *   - dialogueBranches → any NPC that supports skilled conversation
  */
 export interface NPC {
   id: string;
@@ -49,13 +101,22 @@ export interface NPC {
   role: NpcRole;
   /** Which room this NPC stands in */
   roomId: string;
-  /** Lines shown when the player talks to them */
+  /** Default lines shown when the player talks with no special intent */
   dialogue: NpcDialogue[];
   /** Quest ids this NPC offers (questgiver role) */
   questIds?: string[];
   /** Goods for sale (vendor role) */
   stock?: VendorItem[];
+  /**
+   * Skilled conversation branches (Phase 2).
+   * Each entry handles one TalkIntent and defines DC + four outcome lines.
+   * If absent (or the chosen intent has no branch), the NPC's default
+   * dialogue is returned without a skill check.
+   */
+  dialogueBranches?: DialogueBranch[];
 }
+
+// ─── Client-facing views ──────────────────────────────────────────────────────
 
 /**
  * A lightweight NPC summary sent to clients for the room "Here" list.

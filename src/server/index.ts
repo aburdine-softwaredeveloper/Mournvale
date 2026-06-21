@@ -10,6 +10,12 @@
  * Architecture note: Message routing lives here (the "controller").
  * Business logic lives in CharacterManager and command handlers.
  * This file should only orchestrate — not implement game logic.
+ *
+ * Phase 2: handleTalk now accepts an optional TalkIntent and runs a
+ * skill check when the NPC has a matching dialogue branch.
+ *
+ * Phase 3: combat_submit_action handler collects player submissions
+ * and resolves the round once all players have submitted.
  */
 
 import { WebSocketServer, WebSocket, RawData } from "ws";
@@ -29,12 +35,16 @@ import type { SaveStore } from "./persistence/SaveStore";
 import { PartyManager } from "./party/PartyManager";
 import { QuestManager } from "./quest/QuestManager";
 import { worldManager } from "./world/WorldManager";
+import { combatManager, buildPlayerCombatEntity, buildEnemyCombatEntity } from "./combat/CombatManager";
 import type {
   ClientMessage,
   ServerMessage,
   CharacterCreationStep,
 } from "../types/network";
+import type { TalkIntent } from "../types/npc";
 import type { Player } from "../types/game";
+import type { CharacterClass } from "../types/character";
+
 
 // ─────────────────────────────────────────────
 // SERVER SETUP
@@ -43,19 +53,27 @@ import type { Player } from "../types/game";
 const PORT = 3000;
 const server = new WebSocketServer({ port: PORT });
 
-/**
- * The persistence backend. Swap JsonFileSaveStore for a database-backed
- * implementation later without changing any calling code.
- */
 const saveStore: SaveStore = new JsonFileSaveStore();
-
-/** Authoritative party state (invite + accept grouping). */
 const partyManager = new PartyManager();
-
-/** Authoritative quest board + accepted-quest tracking. */
 const questManager = new QuestManager();
 
+/**
+ * Maps playerId → WebSocket so we can send targeted messages during
+ * combat (each player gets a personalised CombatStateView).
+ */
+const playerSockets = new Map<string, WebSocket>();
+
 console.log(`🏰 Mournvale running on ws://localhost:${PORT}`);
+
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
+
+/** Send a message to a specific player by their persistent playerId. */
+function emitToPlayer(playerId: string, msg: ServerMessage): void {
+  const socket = playerSockets.get(playerId);
+  if (socket) sendToPlayer(socket, msg);
+}
 
 // ─────────────────────────────────────────────
 // CONNECTION HANDLER
@@ -68,22 +86,15 @@ server.on("connection", (socket: WebSocket) => {
     state: "menu",
     tempName: `Traveler-${Math.floor(Math.random() * 9999)}`,
     draft: {},
-    // playerId, activeSlot, character, and roomId are intentionally
-    // omitted — they are optional and exactOptionalPropertyTypes forbids
-    // assigning explicit `undefined`. They are populated as the player
-    // identifies, picks a slot, and reaches the "active" state.
   };
 
   players.set(socket, player);
 
   console.log(`[+] ${player.tempName} connected (${player.id})`);
 
-  // Welcome — client will identify, then show the main menu
   sendToPlayer(socket, {
     type: "system",
-    payload: {
-      message: "Connected to Mournvale.",
-    },
+    payload: { message: "Connected to Mournvale." },
   });
 
   // ─────────────────────────────────────────────
@@ -95,21 +106,15 @@ server.on("connection", (socket: WebSocket) => {
     if (!currentPlayer) return;
 
     let msg: ClientMessage;
-
     try {
       msg = JSON.parse(raw.toString()) as ClientMessage;
     } catch {
-      sendToPlayer(socket, {
-        type: "system",
-        payload: { message: "Invalid message format." },
-      });
+      sendToPlayer(socket, { type: "system", payload: { message: "Invalid message format." } });
       return;
     }
 
     console.log(`[${currentPlayer.tempName}] state:${currentPlayer.state} type:${msg.type}`);
 
-    // `identify` is valid in any state — it establishes the persistent
-    // playerId used to scope saves. Handle it before the state switch.
     if (msg.type === "identify") {
       handleIdentify(currentPlayer, socket, msg.payload.playerId);
       return;
@@ -117,19 +122,14 @@ server.on("connection", (socket: WebSocket) => {
 
     switch (currentPlayer.state) {
       case "menu":
-        // Menu handlers touch disk (async); fire and forget. Errors are
-        // caught inside each handler and reported to the player.
         void handleMenuMessage(currentPlayer, socket, msg);
         break;
-
       case "pending":
         handlePendingMessage(currentPlayer, socket, msg);
         break;
-
       case "character_creation":
         handleCreationMessage(currentPlayer, socket, msg);
         break;
-
       case "active":
         handleActiveMessage(currentPlayer, socket, msg);
         break;
@@ -146,10 +146,6 @@ server.on("connection", (socket: WebSocket) => {
 
     console.log(`[-] ${getDisplayName(currentPlayer)} disconnected`);
 
-    // Auto-save on disconnect: persist if the player is active and has
-    // everything needed to save. This runs async; we remove the player
-    // from the live map immediately but let the write complete in the
-    // background. Errors are logged, not surfaced (the socket is gone).
     if (
       currentPlayer.state === "active" &&
       currentPlayer.character &&
@@ -161,64 +157,37 @@ server.on("connection", (socket: WebSocket) => {
       const { playerId, activeSlot } = currentPlayer;
       saveStore
         .save(playerId, activeSlot, data)
-        .then(() =>
-          console.log(
-            `[save] Auto-saved ${data.character.name} to slot ${activeSlot} on disconnect.`
-          )
-        )
-        .catch((err) =>
-          console.error(`[save] Auto-save failed for ${playerId}:`, err)
-        );
+        .then(() => console.log(`[save] Auto-saved ${data.character.name} to slot ${activeSlot} on disconnect.`))
+        .catch((err) => console.error(`[save] Auto-save failed for ${playerId}:`, err));
     }
 
-    // Only announce departure if player was active in a room
     if (currentPlayer.state === "active" && currentPlayer.roomId) {
-      broadcastToRoom(
-        currentPlayer.roomId,
-        {
-          type: "player_presence",
-          payload: {
-            playerName: getDisplayName(currentPlayer),
-            event: "left",
-          },
-        },
-        currentPlayer.id
-      );
+      broadcastToRoom(currentPlayer.roomId, {
+        type: "player_presence",
+        payload: { playerName: getDisplayName(currentPlayer), event: "left" },
+      }, currentPlayer.id);
     }
 
-    // Capture the disconnecting player's party id before cleanup so we can
-    // return a disbanded party's shared quest to the board.
     const partyIdBefore = partyManager.getPartyId(currentPlayer.id);
+    const partyResult   = partyManager.handleDisconnect(currentPlayer.id);
 
-    // Clean up party membership and notify remaining members. We do this
-    // before deleting the player so name resolution still works for the
-    // departure message; the refresh below resolves only surviving members.
-    const partyResult = partyManager.handleDisconnect(currentPlayer.id);
-
+    // Remove from socket map before deleting player
+    if (currentPlayer.playerId) playerSockets.delete(currentPlayer.playerId);
     players.delete(socket);
 
     if (partyResult.disbanded) {
-      // Return the party's shared quest (if any) to the board.
-      if (partyIdBefore) {
-        questManager.abandon(partyIdBefore);
-      }
+      if (partyIdBefore) questManager.abandon(partyIdBefore);
       for (const id of partyResult.formerMembers) {
         if (id === currentPlayer.id) continue;
         const p = getPlayerById(id);
         if (p) {
           sendToPlayer(p.socket, { type: "party_update", payload: { party: null } });
-          sendToPlayer(p.socket, {
-            type: "system",
-            payload: { message: "Your party has disbanded." },
-          });
-          // Quests now key by their own id again — refresh their board.
+          sendToPlayer(p.socket, { type: "system", payload: { message: "Your party has disbanded." } });
           sendQuestBoard(p, p.socket);
         }
       }
     } else if (partyResult.stillInParty.length > 0) {
-      for (const id of partyResult.stillInParty) {
-        sendPartyUpdate(id);
-      }
+      for (const id of partyResult.stillInParty) sendPartyUpdate(id);
     }
   });
 });
@@ -227,49 +196,26 @@ server.on("connection", (socket: WebSocket) => {
 // STATE HANDLERS
 // ─────────────────────────────────────────────
 
-/**
- * Handles the `identify` message (valid in any state).
- * Establishes the persistent playerId, then — if the player is still
- * at the menu — sends them their save-slot list so the menu can render.
- */
-function handleIdentify(
-  player: Player,
-  socket: WebSocket,
-  playerId: string
-): void {
-  // Only accept identify once, and only a sane-looking id
+function handleIdentify(player: Player, socket: WebSocket, playerId: string): void {
   if (player.playerId) return;
-
   const trimmed = (playerId ?? "").trim();
   if (trimmed.length < 8 || trimmed.length > 64) {
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: "Invalid player identity." },
-    });
+    sendToPlayer(socket, { type: "system", payload: { message: "Invalid player identity." } });
     return;
   }
-
   player.playerId = trimmed;
+  playerSockets.set(trimmed, socket);
   console.log(`[id] ${player.tempName} identified as ${trimmed}`);
-
-  // Send the initial slot list for the main menu
   void sendSlotList(player, socket);
 }
 
-/**
- * Handles messages while the player is at the main menu.
- * Valid messages: request_slots, new_game, load_game, delete_slot.
- */
 async function handleMenuMessage(
   player: Player,
   socket: WebSocket,
   msg: ClientMessage
 ): Promise<void> {
   if (!player.playerId) {
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: "Please wait — still connecting." },
-    });
+    sendToPlayer(socket, { type: "system", payload: { message: "Please wait — still connecting." } });
     return;
   }
 
@@ -281,330 +227,180 @@ async function handleMenuMessage(
     case "new_game": {
       const slot = msg.payload.slot;
       if (!isValidSlot(slot)) {
-        sendToPlayer(socket, {
-          type: "system",
-          payload: { message: "Invalid save slot." },
-        });
+        sendToPlayer(socket, { type: "system", payload: { message: "Invalid save slot." } });
         return;
       }
-
-      // Bind this session to the chosen slot, then begin the intro.
       player.activeSlot = slot;
-      player.state = "pending";
-      player.draft = {};
-
-      sendToPlayer(socket, {
-        type: "state_transition",
-        payload: { newState: "pending" },
-      });
+      player.state      = "pending";
+      player.draft      = {};
+      sendToPlayer(socket, { type: "state_transition", payload: { newState: "pending" } });
       return;
     }
 
     case "load_game": {
       const slot = msg.payload.slot;
       if (!isValidSlot(slot)) {
-        sendToPlayer(socket, {
-          type: "system",
-          payload: { message: "Invalid save slot." },
-        });
+        sendToPlayer(socket, { type: "system", payload: { message: "Invalid save slot." } });
         return;
       }
-
       const data = await saveStore.load(player.playerId, slot);
       if (!data) {
-        sendToPlayer(socket, {
-          type: "system",
-          payload: { message: "That slot is empty." },
-        });
+        sendToPlayer(socket, { type: "system", payload: { message: "That slot is empty." } });
         await sendSlotList(player, socket);
         return;
       }
-
-      // Restore the character directly into the active state.
       player.activeSlot = slot;
-      player.character = data.character;
-      // Restore position if the room still exists; else fall back to tavern.
-      player.roomId = rooms[data.roomId] ? data.roomId : "tavern";
-      player.state = "active";
+      player.character  = data.character;
+      player.roomId     = rooms[data.roomId] ? data.roomId : "tavern";
+      player.state      = "active";
 
       sendToPlayer(socket, {
         type: "character_confirmed",
         payload: {
-          name: data.character.name,
+          name:           data.character.name,
           characterClass: data.character.characterClass,
-          gender: data.character.gender,
-          hairColor: data.character.hairColor,
-          glasses: data.character.glasses,
+          gender:         data.character.gender,
+          hairColor:      data.character.hairColor,
+          glasses:        data.character.glasses,
         },
       });
-
-      sendToPlayer(socket, {
-        type: "state_transition",
-        payload: { newState: "active" },
-      });
-
+      sendToPlayer(socket, { type: "state_transition", payload: { newState: "active" } });
       sendRoomUpdate(player, socket);
-
-      broadcastToRoom(
-        player.roomId,
-        {
-          type: "player_presence",
-          payload: { playerName: data.character.name, event: "entered" },
-        },
-        player.id
-      );
-
-      sendToPlayer(socket, {
-        type: "system",
-        payload: {
-          message: `Welcome back, ${data.character.name}.`,
-        },
-      });
-
-      console.log(
-        `[load] ${data.character.name} loaded from slot ${slot} into ${player.roomId}.`
-      );
+      broadcastToRoom(player.roomId, {
+        type: "player_presence",
+        payload: { playerName: data.character.name, event: "entered" },
+      }, player.id);
+      sendToPlayer(socket, { type: "system", payload: { message: `Welcome back, ${data.character.name}.` } });
+      console.log(`[load] ${data.character.name} loaded from slot ${slot} into ${player.roomId}.`);
       return;
     }
 
     case "delete_slot": {
       const slot = msg.payload.slot;
       if (!isValidSlot(slot)) {
-        sendToPlayer(socket, {
-          type: "system",
-          payload: { message: "Invalid save slot." },
-        });
+        sendToPlayer(socket, { type: "system", payload: { message: "Invalid save slot." } });
         return;
       }
       await saveStore.delete(player.playerId, slot);
-      sendToPlayer(socket, {
-        type: "save_result",
-        payload: { success: true, slot, message: "Save deleted." },
-      });
+      sendToPlayer(socket, { type: "save_result", payload: { success: true, slot, message: "Save deleted." } });
       await sendSlotList(player, socket);
       return;
     }
 
     default:
-      sendToPlayer(socket, {
-        type: "system",
-        payload: { message: "Choose New Game or Load Game." },
-      });
+      sendToPlayer(socket, { type: "system", payload: { message: "Choose New Game or Load Game." } });
   }
 }
 
-/** Loads and sends the player's slot summaries for the menu. */
 async function sendSlotList(player: Player, socket: WebSocket): Promise<void> {
   if (!player.playerId) return;
   try {
     const slots = await saveStore.listSlots(player.playerId);
-    sendToPlayer(socket, {
-      type: "slot_list",
-      payload: { slots },
-    });
+    sendToPlayer(socket, { type: "slot_list", payload: { slots } });
   } catch (err) {
     console.error("[save] Failed to list slots:", err);
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: "Could not load your saves." },
-    });
+    sendToPlayer(socket, { type: "system", payload: { message: "Could not load your saves." } });
   }
 }
 
-/** Validates a slot number is an integer in range. */
 function isValidSlot(slot: number): boolean {
   return Number.isInteger(slot) && slot >= 1 && slot <= 5;
 }
 
-/**
- * Handles messages from players in "pending" state.
- * The only valid message here is intro_complete.
- */
-function handlePendingMessage(
-  player: Player,
-  socket: WebSocket,
-  msg: ClientMessage
-): void {
+function handlePendingMessage(player: Player, socket: WebSocket, msg: ClientMessage): void {
   if (msg.type !== "intro_complete") {
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: "Please wait for the introduction to complete." },
-    });
+    sendToPlayer(socket, { type: "system", payload: { message: "Please wait for the introduction to complete." } });
     return;
   }
-
-  // Transition to character_creation
   player.state = "character_creation";
-
-  sendToPlayer(socket, {
-    type: "state_transition",
-    payload: { newState: "character_creation" },
-  });
-
-  // Begin the tavern keeper dialogue
+  sendToPlayer(socket, { type: "state_transition", payload: { newState: "character_creation" } });
   const firstStep = getFirstStep();
   sendToPlayer(socket, getDialogueForStep(firstStep, player.draft));
 }
 
-/**
- * Handles messages from players in "character_creation" state.
- * Accepts dialogue_choice messages and advances the creation flow.
- */
-function handleCreationMessage(
-  player: Player,
-  socket: WebSocket,
-  msg: ClientMessage
-): void {
+function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMessage): void {
   if (msg.type !== "dialogue_choice") {
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: "Please complete character creation first." },
-    });
+    sendToPlayer(socket, { type: "system", payload: { message: "Please complete character creation first." } });
     return;
   }
 
   const { step, value } = msg.payload;
 
-  // Handle restart at confirm step
   if (step === "confirm" && value === "restart") {
     player.draft = {};
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: "Very well — let's start again." },
-    });
+    sendToPlayer(socket, { type: "system", payload: { message: "Very well — let's start again." } });
     sendToPlayer(socket, getDialogueForStep(getFirstStep(), player.draft));
     return;
   }
 
-  // Validate and apply the answer
   const error = applyAnswer(step, value, player.draft);
-
   if (error) {
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: error },
-    });
-    // Re-send the same step's dialogue so the player can try again
+    sendToPlayer(socket, { type: "system", payload: { message: error } });
     sendToPlayer(socket, getDialogueForStep(step, player.draft));
     return;
   }
 
-  // If confirmed, finalize and transition to active
   if (step === "confirm" && value === "confirm") {
     try {
-      const character = finalizeDraft(player.draft);
+      const character  = finalizeDraft(player.draft);
       player.character = character;
-      player.state = "active";
-      player.roomId = "tavern";
+      player.state     = "active";
+      player.roomId    = "tavern";
 
-      // Confirm to the client
       sendToPlayer(socket, {
         type: "character_confirmed",
         payload: {
-          name: character.name,
+          name:           character.name,
           characterClass: character.characterClass,
-          gender: character.gender,
-          hairColor: character.hairColor,
-          glasses: character.glasses,
+          gender:         character.gender,
+          hairColor:      character.hairColor,
+          glasses:        character.glasses,
         },
       });
-
-      sendToPlayer(socket, {
-        type: "state_transition",
-        payload: { newState: "active" },
-      });
-
-      // Send the starting room
+      sendToPlayer(socket, { type: "state_transition", payload: { newState: "active" } });
       sendRoomUpdate(player, socket);
-
-      // Announce arrival to the room
-      broadcastToRoom(
-        "tavern",
-        {
-          type: "player_presence",
-          payload: {
-            playerName: character.name,
-            event: "entered",
-          },
-        },
-        player.id
-      );
-
-      // Final barkeep send-off
+      broadcastToRoom("tavern", {
+        type: "player_presence",
+        payload: { playerName: character.name, event: "entered" },
+      }, player.id);
       sendToPlayer(socket, {
         type: "dialogue",
         payload: {
           speaker: "Aldric the Barkeep",
-          text:
-            `Welcome to Mournvale, ${character.name}. ` +
-            "Watch yourself out there. The fog's been thicker than usual.",
+          text: `Welcome to Mournvale, ${character.name}. Watch yourself out there. The fog's been thicker than usual.`,
         },
       });
 
-      // Initial save: persist the brand-new character immediately so it
-      // survives even if the player closes the tab before moving (our
-      // auto-save is on disconnect, but writing now guarantees the slot
-      // is populated the moment creation finishes).
       if (player.playerId && player.activeSlot) {
         const data = buildSaveData(character, player.roomId);
         const { playerId, activeSlot } = player;
         saveStore
           .save(playerId, activeSlot, data)
-          .then(() =>
-            console.log(
-              `[save] Initial save of ${character.name} to slot ${activeSlot}.`
-            )
-          )
-          .catch((err) =>
-            console.error(`[save] Initial save failed:`, err)
-          );
+          .then(() => console.log(`[save] Initial save of ${character.name} to slot ${activeSlot}.`))
+          .catch((err) => console.error(`[save] Initial save failed:`, err));
       }
 
-      console.log(
-        `[★] ${character.name} (${character.characterClass}) entered the world.`
-      );
-    } catch (err) {
-      sendToPlayer(socket, {
-        type: "system",
-        payload: { message: "Something went wrong creating your character. Please try again." },
-      });
+      console.log(`[★] ${character.name} (${character.characterClass}) entered the world.`);
+    } catch {
+      sendToPlayer(socket, { type: "system", payload: { message: "Something went wrong creating your character. Please try again." } });
       player.draft = {};
       sendToPlayer(socket, getDialogueForStep(getFirstStep(), player.draft));
     }
     return;
   }
 
-  // Advance to the next step
   const nextStep = getNextStep(step as CharacterCreationStep);
-  if (nextStep) {
-    sendToPlayer(socket, getDialogueForStep(nextStep, player.draft));
-  }
+  if (nextStep) sendToPlayer(socket, getDialogueForStep(nextStep, player.draft));
 }
 
-/**
- * Handles messages from fully active players.
- * Accepts command messages and routes them to the command handler.
- */
-function handleActiveMessage(
-  player: Player,
-  socket: WebSocket,
-  msg: ClientMessage
-): void {
+function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessage): void {
   switch (msg.type) {
     case "command": {
       const response = handleCommand(player.id, msg.payload.input);
-      if (response) {
-        sendToPlayer(socket, {
-          type: "system",
-          payload: { message: response },
-        });
-      }
-      // If the player moved, update the room panel
-      if (
-        ["north", "south", "east", "west"].includes(
-          msg.payload.input.trim().split(" ")[0]?.toLowerCase() ?? ""
-        )
-      ) {
+      if (response) sendToPlayer(socket, { type: "system", payload: { message: response } });
+      if (["north", "south", "east", "west"].includes(
+        msg.payload.input.trim().split(" ")[0]?.toLowerCase() ?? ""
+      )) {
         sendRoomUpdate(player, socket);
       }
       return;
@@ -615,12 +411,7 @@ function handleActiveMessage(
       return;
 
     case "party_invite_respond":
-      handlePartyInviteRespond(
-        player,
-        socket,
-        msg.payload.fromPlayerId,
-        msg.payload.accept
-      );
+      handlePartyInviteRespond(player, socket, msg.payload.fromPlayerId, msg.payload.accept);
       return;
 
     case "party_leave":
@@ -640,316 +431,40 @@ function handleActiveMessage(
       return;
 
     case "talk":
-      handleTalk(player, socket, msg.payload.targetName);
+      handleTalk(player, socket, msg.payload.targetName, msg.payload.intent);
+      return;
+
+    case "combat_submit_action":
+      handleCombatSubmitAction(player, socket, msg.payload.combatId, msg.payload.submission);
       return;
 
     default:
-      sendToPlayer(socket, {
-        type: "system",
-        payload: { message: "Unknown message type." },
-      });
+      sendToPlayer(socket, { type: "system", payload: { message: "Unknown message type." } });
   }
 }
 
 // ─────────────────────────────────────────────
-// PARTY HANDLERS
-// ─────────────────────────────────────────────
-
-/** Resolves a player's name + class for party views. */
-function resolvePartyInfo(
-  playerId: string
-): { name: string; characterClass: string } | null {
-  const p = getPlayerById(playerId);
-  if (!p || !p.character) return null;
-  return {
-    name: p.character.name,
-    characterClass: p.character.characterClass,
-  };
-}
-
-/** Sends the current party snapshot to one player. */
-function sendPartyUpdate(playerId: string): void {
-  const p = getPlayerById(playerId);
-  if (!p) return;
-
-  const partyId = partyManager.getPartyId(playerId);
-  const party = partyId
-    ? partyManager.buildView(partyId, resolvePartyInfo)
-    : null;
-
-  sendToPlayer(p.socket, {
-    type: "party_update",
-    payload: { party },
-  });
-}
-
-/** Refreshes the party view for a list of player ids. */
-function refreshPartyFor(playerIds: string[]): void {
-  for (const id of playerIds) sendPartyUpdate(id);
-}
-
-/** Handles a request to invite another player (must share a room). */
-function handlePartyInviteSend(
-  player: Player,
-  socket: WebSocket,
-  targetName: string
-): void {
-  if (!player.character || !player.roomId) return;
-
-  // Find the target by name, in the same room, active
-  const target = getActivePlayersInRoom(player.roomId).find(
-    (p) =>
-      p.id !== player.id &&
-      (p.character?.name?.toLowerCase() ?? "") === targetName.trim().toLowerCase()
-  );
-
-  if (!target) {
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: `No one named "${targetName}" is here.` },
-    });
-    return;
-  }
-
-  const error = partyManager.createInvite(player, target);
-  if (error) {
-    sendToPlayer(socket, { type: "system", payload: { message: error } });
-    return;
-  }
-
-  // Notify the target of the invite
-  sendToPlayer(target.socket, {
-    type: "party_invite",
-    payload: {
-      partyId: partyManager.getPartyId(player.id) ?? `pending-${player.id}`,
-      fromName: player.character.name,
-      fromPlayerId: player.id,
-    },
-  });
-
-  sendToPlayer(socket, {
-    type: "system",
-    payload: { message: `You invited ${target.character?.name} to your party.` },
-  });
-}
-
-/** Handles accept/decline of a party invite. */
-function handlePartyInviteRespond(
-  player: Player,
-  socket: WebSocket,
-  fromPlayerId: string,
-  accept: boolean
-): void {
-  if (!accept) {
-    const inviter = getPlayerById(fromPlayerId);
-    if (inviter) {
-      sendToPlayer(inviter.socket, {
-        type: "system",
-        payload: {
-          message: `${player.character?.name ?? "Someone"} declined your invitation.`,
-        },
-      });
-    }
-    return;
-  }
-
-  const result = partyManager.acceptInvite(
-    player,
-    fromPlayerId,
-    (id) => getPlayerById(id)
-  );
-
-  if (result.error) {
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: result.error },
-    });
-    return;
-  }
-
-  // Refresh everyone in the party
-  refreshPartyFor(result.affected);
-
-  // Migrate any solo quests held by members into the shared party owner
-  // key, so a quest someone accepted alone doesn't become orphaned once
-  // the game starts keying quests by party id. The leader (first id) is
-  // the party owner key after acceptInvite created/kept the party.
-  const newPartyId = partyManager.getPartyId(player.id);
-  if (newPartyId) {
-    for (const id of result.affected) {
-      if (id === newPartyId) continue; // already the party key
-      questManager.transferOwner(id, newPartyId);
-    }
-    // Push a refreshed board to everyone so the shared active quest shows
-    for (const id of result.affected) {
-      const p = getPlayerById(id);
-      if (p) sendQuestBoard(p, p.socket);
-    }
-  }
-
-  for (const id of result.affected) {
-    const p = getPlayerById(id);
-    if (p) {
-      sendToPlayer(p.socket, {
-        type: "system",
-        payload: {
-          message: `${player.character?.name ?? "A new member"} joined the party.`,
-        },
-      });
-    }
-  }
-}
-
-/** Handles a player leaving their party. */
-function handlePartyLeave(player: Player, socket: WebSocket): void {
-  // Capture the party id before leaving — the mapping is cleared by leave.
-  const partyIdBefore = partyManager.getPartyId(player.id);
-
-  const result = partyManager.leaveParty(player.id);
-
-  if (result.formerMembers.length === 0) {
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: "You are not in a party." },
-    });
-    return;
-  }
-
-  // The leaver gets a cleared party view
-  sendToPlayer(socket, { type: "party_update", payload: { party: null } });
-  sendToPlayer(socket, {
-    type: "system",
-    payload: {
-      message: result.disbanded ? "The party has disbanded." : "You left the party.",
-    },
-  });
-
-  // Refresh remaining members (or clear them if disbanded)
-  if (result.disbanded) {
-    // The party's shared quest (if any) returns to the board so it isn't
-    // orphaned under a now-defunct party id. abandon() both removes it
-    // from the active map and puts it back on the board.
-    if (partyIdBefore) {
-      questManager.abandon(partyIdBefore);
-    }
-
-    for (const id of result.formerMembers) {
-      if (id === player.id) continue;
-      const p = getPlayerById(id);
-      if (p) {
-        sendToPlayer(p.socket, { type: "party_update", payload: { party: null } });
-        sendToPlayer(p.socket, {
-          type: "system",
-          payload: { message: "The party has disbanded." },
-        });
-        // Each ex-member now keys quests by their own id again; push a
-        // fresh board so their UI reflects the change.
-        sendQuestBoard(p, p.socket);
-      }
-    }
-    // The leaver too
-    sendQuestBoard(player, socket);
-  } else {
-    refreshPartyFor(result.stillInParty);
-  }
-}
-
-// ─────────────────────────────────────────────
-// QUEST HANDLERS
+// NPC INTERACTION (Phase 2)
 // ─────────────────────────────────────────────
 
 /**
- * Returns the quest "owner key" for a player: their party id if in a
- * party, otherwise their own player id. Party members share a key so
- * they share one active quest.
+ * Handles "talk <name> [intent]".
+ *
+ * With no intent (or an NPC without matching branches) the existing
+ * default dialogue is returned. With an intent, a d20 skill check is
+ * run and the NPC responds based on the outcome tier.
  */
-function questOwnerKey(player: Player): string {
-  return partyManager.getPartyId(player.id) ?? player.id;
-}
-
-/** Sends the quest board snapshot to a player. */
-function sendQuestBoard(player: Player, socket: WebSocket): void {
-  const view = questManager.buildView(questOwnerKey(player));
-  sendToPlayer(socket, { type: "quest_board", payload: view });
-}
-
-/** Handles accepting a quest (solo or party). */
-function handleQuestAccept(
+function handleTalk(
   player: Player,
   socket: WebSocket,
-  questId: string
+  targetName: string,
+  intent?: TalkIntent
 ): void {
-  const partyId = partyManager.getPartyId(player.id);
-  const ownerKey = partyId ?? player.id;
-
-  const error = questManager.accept(ownerKey, questId, partyId !== null, partyId);
-  if (error) {
-    sendToPlayer(socket, { type: "system", payload: { message: error } });
-    sendQuestBoard(player, socket);
-    return;
-  }
-
-  // Notify all affected players (the whole party, or just the solo player)
-  const affected = partyId
-    ? partyManager.getPartyMemberIds(player.id)
-    : [player.id];
-
-  for (const id of affected) {
-    const p = getPlayerById(id);
-    if (!p) continue;
-    sendQuestBoard(p, p.socket);
-    sendToPlayer(p.socket, {
-      type: "system",
-      payload: {
-        message: `Quest accepted: ${questManager.getActive(ownerKey)?.quest.title ?? ""}`,
-      },
-    });
-  }
-}
-
-/** Handles abandoning the active quest. */
-function handleQuestAbandon(player: Player, socket: WebSocket): void {
-  const partyId = partyManager.getPartyId(player.id);
-  const ownerKey = partyId ?? player.id;
-
-  const error = questManager.abandon(ownerKey);
-  if (error) {
-    sendToPlayer(socket, { type: "system", payload: { message: error } });
-    return;
-  }
-
-  const affected = partyId
-    ? partyManager.getPartyMemberIds(player.id)
-    : [player.id];
-
-  for (const id of affected) {
-    const p = getPlayerById(id);
-    if (!p) continue;
-    sendQuestBoard(p, p.socket);
-    sendToPlayer(p.socket, {
-      type: "system",
-      payload: { message: "Quest abandoned." },
-    });
-  }
-}
-
-// ─────────────────────────────────────────────
-// NPC INTERACTION
-// ─────────────────────────────────────────────
-
-/**
- * Handles "talk <name>" — finds the named NPC in the player's room and
- * sends back their dialogue, plus quests/stock for the client to act on.
- */
-function handleTalk(player: Player, socket: WebSocket, targetName: string): void {
   if (!player.roomId) return;
 
   const name = targetName.trim();
   if (!name) {
-    sendToPlayer(socket, {
-      type: "system",
-      payload: { message: "Talk to whom?" },
-    });
+    sendToPlayer(socket, { type: "system", payload: { message: "Talk to whom?" } });
     return;
   }
 
@@ -962,41 +477,365 @@ function handleTalk(player: Player, socket: WebSocket, targetName: string): void
     return;
   }
 
+  // Hostile NPCs can't be talked to — trigger combat instead
+  if (npc.role === "hostile") {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: `${npc.name} is hostile — you'll need to fight!` },
+    });
+    return;
+  }
+
+  const charClass = player.character?.characterClass ?? "Warrior";
+  const result    = worldManager.resolveTalk(charClass, npc, intent);
+
   sendToPlayer(socket, {
     type: "npc_interaction",
-    payload: worldManager.buildInteractionView(npc),
+    payload: {
+      ...result.view,
+      ...(result.checkDisplay  ? { checkDisplay: result.checkDisplay }  : {}),
+      ...(result.infoReveal    ? { infoReveal:   result.infoReveal   }  : {}),
+    },
   });
+
+  // Apply side effects from the outcome (quest unlocks handled by view questIds)
+  // Future: handle standing changes (hostile NPC standing, etc.)
+}
+
+// ─────────────────────────────────────────────
+// COMBAT (Phase 3)
+// ─────────────────────────────────────────────
+
+/**
+ * Call this when players enter a room containing hostile NPCs.
+ * Places all players in the room and the hostile NPCs on the grid,
+ * then sends a personalised combat_start to every player.
+ */
+export function triggerCombat(roomId: string): void {
+  const playersInRoom = getActivePlayersInRoom(roomId);
+  const hostileNpcs   = worldManager.getHostileNpcsInRoom(roomId);
+  if (!playersInRoom.length || !hostileNpcs.length) return;
+
+  // Place players along the bottom rows, enemies along the top rows
+  const playerEntities = playersInRoom.map((p, i) =>
+    buildPlayerCombatEntity({
+      playerId:       p.id,
+      name:           p.character?.name ?? "Adventurer",
+      characterClass: (p.character?.characterClass ?? "Warrior") as CharacterClass,
+      hp:             30,
+      position:       { x: i % 8, y: 7 - Math.floor(i / 8) },
+    })
+  );
+
+  const enemyEntities = hostileNpcs.map((npc, i) =>
+    buildEnemyCombatEntity({
+      id:       npc.id,
+      name:     npc.name,
+      position: { x: 3 + (i % 5), y: Math.floor(i / 5) },
+      hp:       20,
+      ac:       13,
+    })
+  );
+
+  const state = combatManager.createCombat(roomId, playerEntities, enemyEntities);
+
+  // Notify each player individually (personalised myEntityId in the view)
+  for (const p of playersInRoom) {
+    if (!p.playerId) continue;
+    sendToPlayer(p.socket, {
+      type: "combat_start",
+      payload: combatManager.getViewForPlayer(state.id, p.playerId)!,
+    });
+  }
+}
+
+/**
+ * Handles a player submitting their planned action for the current round.
+ * Once all players have submitted, the round resolves and results are
+ * broadcast in initiative order.
+ */
+function handleCombatSubmitAction(
+  player: Player,
+  socket: WebSocket,
+  combatId: string,
+  submission: Parameters<typeof combatManager.submitAction>[1]
+): void {
+  const state = combatManager.getState(combatId);
+  if (!state) {
+    sendToPlayer(socket, { type: "system", payload: { message: "No active combat found." } });
+    return;
+  }
+
+  const { allSubmitted, pendingPlayerIds } = combatManager.submitAction(combatId, submission);
+
+  // Broadcast updated pending list so all clients can show "waiting on…"
+  const playersInCombat = state.entities
+    .filter(e => e.type === "player" && e.playerId)
+    .map(e => e.playerId!);
+
+  for (const pid of playersInCombat) {
+    const view = combatManager.getViewForPlayer(combatId, pid);
+    if (!view) continue;
+    emitToPlayer(pid, {
+      type: "combat_planning",
+      payload: { combatId, round: state.round, state: view, pendingPlayerIds },
+    });
+  }
+
+  if (!allSubmitted) return;
+
+  // ── All players submitted → resolve ───────────────────────────────────────
+  const { events, isOver, outcome } = combatManager.resolveRound(combatId);
+
+  // Broadcast the resolution to everyone in the room
+  const broadcastView = combatManager.getBroadcastView(combatId);
+  if (broadcastView) {
+    const currentState = combatManager.getState(combatId);
+    for (const pid of playersInCombat) {
+      const finalView = combatManager.getViewForPlayer(combatId, pid) ?? broadcastView;
+      emitToPlayer(pid, {
+        type: "combat_resolution",
+        payload: { combatId, round: currentState?.round ?? 1, events, finalState: finalView },
+      });
+    }
+  }
+
+  if (isOver) {
+    const enemyCount = state.entities.filter(e => e.type === "enemy").length;
+    const xpReward   = enemyCount * 50;
+    const goldReward = Math.floor(Math.random() * 15) + 5;
+
+    for (const pid of playersInCombat) {
+      emitToPlayer(pid, {
+        type: "combat_end",
+        payload: { combatId, outcome: outcome!, xpReward, goldReward },
+      });
+    }
+    combatManager.endCombat(combatId);
+    return;
+  }
+
+  // Next planning round — send personalised states
+  const nextState = combatManager.getState(combatId);
+  if (!nextState) return;
+  const nextPending = nextState.entities
+    .filter(e => e.type === "player" && !e.isDead && e.playerId)
+    .map(e => e.playerId!);
+
+  for (const pid of playersInCombat) {
+    const view = combatManager.getViewForPlayer(combatId, pid);
+    if (!view) continue;
+    emitToPlayer(pid, {
+      type: "combat_planning",
+      payload: { combatId, round: nextState.round, state: view, pendingPlayerIds: nextPending },
+    });
+  }
+}
+
+// ─────────────────────────────────────────────
+// PARTY HANDLERS
+// ─────────────────────────────────────────────
+
+function resolvePartyInfo(playerId: string): { name: string; characterClass: string } | null {
+  const p = getPlayerById(playerId);
+  if (!p || !p.character) return null;
+  return { name: p.character.name, characterClass: p.character.characterClass };
+}
+
+function sendPartyUpdate(playerId: string): void {
+  const p = getPlayerById(playerId);
+  if (!p) return;
+  const partyId = partyManager.getPartyId(playerId);
+  const party   = partyId ? partyManager.buildView(partyId, resolvePartyInfo) : null;
+  sendToPlayer(p.socket, { type: "party_update", payload: { party } });
+}
+
+function refreshPartyFor(playerIds: string[]): void {
+  for (const id of playerIds) sendPartyUpdate(id);
+}
+
+function handlePartyInviteSend(player: Player, socket: WebSocket, targetName: string): void {
+  if (!player.character || !player.roomId) return;
+  const target = getActivePlayersInRoom(player.roomId).find(
+    p => p.id !== player.id &&
+         (p.character?.name?.toLowerCase() ?? "") === targetName.trim().toLowerCase()
+  );
+  if (!target) {
+    sendToPlayer(socket, { type: "system", payload: { message: `No one named "${targetName}" is here.` } });
+    return;
+  }
+  const error = partyManager.createInvite(player, target);
+  if (error) { sendToPlayer(socket, { type: "system", payload: { message: error } }); return; }
+
+  sendToPlayer(target.socket, {
+    type: "party_invite",
+    payload: {
+      partyId:      partyManager.getPartyId(player.id) ?? `pending-${player.id}`,
+      fromName:     player.character.name,
+      fromPlayerId: player.id,
+    },
+  });
+  sendToPlayer(socket, { type: "system", payload: { message: `You invited ${target.character?.name} to your party.` } });
+}
+
+function handlePartyInviteRespond(
+  player: Player,
+  socket: WebSocket,
+  fromPlayerId: string,
+  accept: boolean
+): void {
+  if (!accept) {
+    const inviter = getPlayerById(fromPlayerId);
+    if (inviter) {
+      sendToPlayer(inviter.socket, {
+        type: "system",
+        payload: { message: `${player.character?.name ?? "Someone"} declined your invitation.` },
+      });
+    }
+    return;
+  }
+
+  const result = partyManager.acceptInvite(player, fromPlayerId, (id) => getPlayerById(id));
+  if (result.error) {
+    sendToPlayer(socket, { type: "system", payload: { message: result.error } });
+    return;
+  }
+
+  refreshPartyFor(result.affected);
+
+  const newPartyId = partyManager.getPartyId(player.id);
+  if (newPartyId) {
+    for (const id of result.affected) {
+      if (id === newPartyId) continue;
+      questManager.transferOwner(id, newPartyId);
+    }
+    for (const id of result.affected) {
+      const p = getPlayerById(id);
+      if (p) sendQuestBoard(p, p.socket);
+    }
+  }
+
+  for (const id of result.affected) {
+    const p = getPlayerById(id);
+    if (p) {
+      sendToPlayer(p.socket, {
+        type: "system",
+        payload: { message: `${player.character?.name ?? "A new member"} joined the party.` },
+      });
+    }
+  }
+}
+
+function handlePartyLeave(player: Player, socket: WebSocket): void {
+  const partyIdBefore = partyManager.getPartyId(player.id);
+  const result        = partyManager.leaveParty(player.id);
+
+  if (result.formerMembers.length === 0) {
+    sendToPlayer(socket, { type: "system", payload: { message: "You are not in a party." } });
+    return;
+  }
+
+  sendToPlayer(socket, { type: "party_update", payload: { party: null } });
+  sendToPlayer(socket, {
+    type: "system",
+    payload: { message: result.disbanded ? "The party has disbanded." : "You left the party." },
+  });
+
+  if (result.disbanded) {
+    if (partyIdBefore) questManager.abandon(partyIdBefore);
+    for (const id of result.formerMembers) {
+      if (id === player.id) continue;
+      const p = getPlayerById(id);
+      if (p) {
+        sendToPlayer(p.socket, { type: "party_update", payload: { party: null } });
+        sendToPlayer(p.socket, { type: "system", payload: { message: "The party has disbanded." } });
+        sendQuestBoard(p, p.socket);
+      }
+    }
+    sendQuestBoard(player, socket);
+  } else {
+    refreshPartyFor(result.stillInParty);
+  }
+}
+
+// ─────────────────────────────────────────────
+// QUEST HANDLERS
+// ─────────────────────────────────────────────
+
+function questOwnerKey(player: Player): string {
+  return partyManager.getPartyId(player.id) ?? player.id;
+}
+
+function sendQuestBoard(player: Player, socket: WebSocket): void {
+  const view = questManager.buildView(questOwnerKey(player));
+  sendToPlayer(socket, { type: "quest_board", payload: view });
+}
+
+function handleQuestAccept(player: Player, socket: WebSocket, questId: string): void {
+  const partyId  = partyManager.getPartyId(player.id);
+  const ownerKey = partyId ?? player.id;
+  const error    = questManager.accept(ownerKey, questId, partyId !== null, partyId);
+
+  if (error) {
+    sendToPlayer(socket, { type: "system", payload: { message: error } });
+    sendQuestBoard(player, socket);
+    return;
+  }
+
+  const affected = partyId ? partyManager.getPartyMemberIds(player.id) : [player.id];
+  for (const id of affected) {
+    const p = getPlayerById(id);
+    if (!p) continue;
+    sendQuestBoard(p, p.socket);
+    sendToPlayer(p.socket, {
+      type: "system",
+      payload: { message: `Quest accepted: ${questManager.getActive(ownerKey)?.quest.title ?? ""}` },
+    });
+  }
+}
+
+function handleQuestAbandon(player: Player, socket: WebSocket): void {
+  const partyId  = partyManager.getPartyId(player.id);
+  const ownerKey = partyId ?? player.id;
+  const error    = questManager.abandon(ownerKey);
+
+  if (error) {
+    sendToPlayer(socket, { type: "system", payload: { message: error } });
+    return;
+  }
+
+  const affected = partyId ? partyManager.getPartyMemberIds(player.id) : [player.id];
+  for (const id of affected) {
+    const p = getPlayerById(id);
+    if (!p) continue;
+    sendQuestBoard(p, p.socket);
+    sendToPlayer(p.socket, { type: "system", payload: { message: "Quest abandoned." } });
+  }
 }
 
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
 
-/**
- * Sends a full room update to the client — used on spawn and movement.
- */
 function sendRoomUpdate(player: Player, socket: WebSocket): void {
   if (!player.roomId) return;
-
   const room = rooms[player.roomId];
   if (!room) return;
 
   const occupants = getActivePlayersInRoom(room.id)
-    .filter((p) => p.id !== player.id)
-    .map((p) => getDisplayName(p));
+    .filter(p => p.id !== player.id)
+    .map(p => getDisplayName(p));
 
   const npcs = worldManager.getNpcViewsInRoom(room.id);
 
   sendToPlayer(socket, {
     type: "room",
     payload: {
-      name: room.name,
+      name:        room.name,
       description: room.description,
-      exits: Object.keys(room.exits),
-      players: occupants,
+      exits:       Object.keys(room.exits),
+      players:     occupants,
       npcs,
-      // Only include artKey when the room defines one — omitting (rather
-      // than sending undefined) satisfies exactOptionalPropertyTypes.
       ...(room.artKey ? { artKey: room.artKey } : {}),
     },
   });

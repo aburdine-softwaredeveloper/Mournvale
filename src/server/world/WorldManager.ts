@@ -1,101 +1,178 @@
 /**
- * WorldManager.ts — Read-only access to static world content
+ * WorldManager.ts — Authoritative source for room and NPC data
  *
- * Owns the room map and NPC roster. Engine/handler code asks the
- * WorldManager "what room is this / who is here," keeping content
- * (rooms.ts, npcs.ts) separate from live session state (gameState.ts).
+ * Room and NPC data live in sibling files:
+ *   src/server/world/rooms.ts  → exports ROOMS: Record<string, Room>
+ *   src/server/world/npcs.ts   → exports NPCS: NPC[]
  *
- * Architecture: Pure lookups over static data. No mutation, no sockets.
- * Indexes NPCs by room once at construction for O(1) "who's here."
+ * The Room type is defined in src/types/game.ts (shared with the rest
+ * of the server). WorldManager imports it from there, not locally.
+ *
+ * Exports:
+ *   worldManager — singleton with all lookup + interaction methods
+ *
+ * Called by gameState.ts:
+ *   export const rooms = worldManager.getRooms();
  */
 
-import type { Room } from "../../types/game";
-import type { NPC, NpcView, NpcInteractionView } from "../../types/npc";
 import { ROOMS } from "./rooms";
-import { NPCS } from "./npcs";
+import { NPCS  } from "./npcs";
+import type { Room } from "../../types/game";
+import type { NPC, NpcView, NpcInteractionView, TalkIntent } from "../../types/npc";
+import { TALK_INTENT_SKILL } from "../../types/npc";
+import type { CharacterStats, Skill } from "../../types/character";
+import { buildCharacterStats } from "../../types/character";
+import { rollSkillCheck } from "../skills/SkillEngine";
+import type { SkillCheckDisplay } from "../../types/network";
 
-export class WorldManager {
-  private readonly rooms: Record<string, Room>;
-  private readonly npcsById = new Map<string, NPC>();
-  private readonly npcsByRoom = new Map<string, NPC[]>();
+// ─── TalkResult ───────────────────────────────────────────────────────────────
 
-  constructor(
-    rooms: Record<string, Room> = ROOMS,
-    npcs: NPC[] = NPCS
-  ) {
-    this.rooms = rooms;
+export interface TalkResult {
+  view: NpcInteractionView;
+  checkDisplay?: SkillCheckDisplay;
+  infoReveal?: string;
+}
 
+// ─── WorldManager ─────────────────────────────────────────────────────────────
+
+class WorldManager {
+  private readonly byId:   Map<string, NPC>;
+  private readonly byRoom: Map<string, NPC[]>;
+
+  constructor(npcs: NPC[]) {
+    this.byId   = new Map(npcs.map(n => [n.id, n]));
+    this.byRoom = new Map();
     for (const npc of npcs) {
-      this.npcsById.set(npc.id, npc);
-      const list = this.npcsByRoom.get(npc.roomId) ?? [];
+      const list = this.byRoom.get(npc.roomId) ?? [];
       list.push(npc);
-      this.npcsByRoom.set(npc.roomId, list);
+      this.byRoom.set(npc.roomId, list);
     }
   }
 
-  // ── Rooms ──
+  // ── Room access ───────────────────────────────────────────────────────────
 
-  /** Returns the room with the given id, or undefined. */
-  public getRoom(roomId: string): Room | undefined {
-    return this.rooms[roomId];
+  /** Returns the full room map. Called by gameState.ts. */
+  getRooms(): Record<string, Room> {
+    return ROOMS;
   }
 
-  /** Returns the full room map (read-only use). */
-  public getRooms(): Record<string, Room> {
-    return this.rooms;
-  }
+  // ── NPC lookups ───────────────────────────────────────────────────────────
 
-  /** True if a room id exists in the world. */
-  public hasRoom(roomId: string): boolean {
-    return roomId in this.rooms;
-  }
-
-  // ── NPCs ──
-
-  /** Returns the NPC with the given id, or undefined. */
-  public getNpc(npcId: string): NPC | undefined {
-    return this.npcsById.get(npcId);
-  }
-
-  /** Returns the NPCs standing in a room (empty array if none). */
-  public getNpcsInRoom(roomId: string): NPC[] {
-    return this.npcsByRoom.get(roomId) ?? [];
-  }
-
-  /** Lightweight NPC summaries for a room's "Here" list. */
-  public getNpcViewsInRoom(roomId: string): NpcView[] {
-    return this.getNpcsInRoom(roomId).map((n) => ({
-      id: n.id,
-      name: n.name,
+  getNpcViewsInRoom(roomId: string): NpcView[] {
+    return (this.byRoom.get(roomId) ?? []).map(n => ({
+      id:    n.id,
+      name:  n.name,
       title: n.title,
-      role: n.role,
+      role:  n.role,
     }));
   }
 
-  /**
-   * Finds an NPC in a room by name (case-insensitive), for "talk to X".
-   * Matches on first name so "talk aldric" works.
-   */
-  public findNpcInRoomByName(roomId: string, name: string): NPC | undefined {
-    const target = name.trim().toLowerCase();
-    return this.getNpcsInRoom(roomId).find(
-      (n) => n.name.toLowerCase() === target
+  findNpcInRoomByName(roomId: string, name: string): NPC | undefined {
+    const lower = name.toLowerCase();
+    return (this.byRoom.get(roomId) ?? []).find(
+      n => n.name.toLowerCase().startsWith(lower)
     );
   }
 
-  /** Builds the full interaction view for talking to an NPC. */
-  public buildInteractionView(npc: NPC): NpcInteractionView {
+  getNpcById(id: string): NPC | undefined {
+    return this.byId.get(id);
+  }
+
+  getNpcsInRoom(roomId: string): NPC[] {
+    return this.byRoom.get(roomId) ?? [];
+  }
+
+  getHostileNpcsInRoom(roomId: string): NPC[] {
+    return this.getNpcsInRoom(roomId).filter(n => n.role === "hostile");
+  }
+
+  // ── Interaction views ─────────────────────────────────────────────────────
+
+  buildInteractionView(npc: NPC): NpcInteractionView {
     return {
-      id: npc.id,
-      name: npc.name,
-      title: npc.title,
-      role: npc.role,
+      id:       npc.id,
+      name:     npc.name,
+      title:    npc.title,
+      role:     npc.role,
       dialogue: npc.dialogue,
       questIds: npc.questIds ?? [],
-      stock: npc.stock ?? [],
+      stock:    npc.stock    ?? [],
+    };
+  }
+
+  /**
+   * Phase 2 — Resolve a skill-check talk interaction.
+   *
+   * If the NPC has a DialogueBranch matching the given intent, runs a d20
+   * skill check and returns the outcome-specific NPC line plus a
+   * SkillCheckDisplay for the client roll-reveal UI.
+   *
+   * Falls back to default dialogue (no check) when:
+   *   - intent is undefined
+   *   - the NPC has no dialogueBranches
+   *   - the NPC has no branch for this intent
+   */
+  resolveTalk(
+    characterClass: string,
+    npc: NPC,
+    intent: TalkIntent | undefined
+  ): TalkResult {
+    const baseView = this.buildInteractionView(npc);
+
+    if (!intent || !npc.dialogueBranches?.length) {
+      return { view: baseView };
+    }
+
+    const branch = npc.dialogueBranches.find(b => b.intent === intent);
+    if (!branch) {
+      const fallback: Record<TalkIntent, string> = {
+        persuade:   "Your silver tongue doesn't seem to move them.",
+        intimidate: "They don't seem threatened.",
+        inquire:    "They shrug and look away.",
+        deceive:    "They see right through you.",
+      };
+      return {
+        view: { ...baseView, dialogue: [{ text: fallback[intent] }] },
+      };
+    }
+
+    // ── Run the skill check ──────────────────────────────────────────────────
+    const stats: CharacterStats = buildCharacterStats(
+      characterClass as Parameters<typeof buildCharacterStats>[0],
+      1
+    );
+    const skill       = TALK_INTENT_SKILL[intent] as Skill;
+    const result      = rollSkillCheck(stats, skill, branch.dc);
+    const outcome     = result.tier;
+    const outcomeData = branch.outcomes[outcome];
+
+    const checkDisplay: SkillCheckDisplay = {
+      skill,
+      intent,
+      d20Result:     result.roll.result,
+      modifier:      result.roll.modifier,
+      total:         result.roll.total,
+      dc:            branch.dc,
+      outcome,
+      wasProficient: result.wasProficient,
+    };
+
+    return {
+      view: {
+        ...baseView,
+        dialogue: [{ text: outcomeData.npcLine }],
+        questIds: [
+          ...baseView.questIds,
+          ...(outcomeData.questUnlock ? [outcomeData.questUnlock] : []),
+        ],
+      },
+      checkDisplay,
+      // Conditional spread avoids exactOptionalPropertyTypes violation
+      ...(outcomeData.infoReveal !== undefined ? { infoReveal: outcomeData.infoReveal } : {}),
     };
   }
 }
 
-/** Shared world instance. */
-export const worldManager = new WorldManager();
+// ─── Singleton ────────────────────────────────────────────────────────────────
+
+export const worldManager = new WorldManager(NPCS);

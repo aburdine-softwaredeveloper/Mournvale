@@ -974,3 +974,145 @@ html, body {
     max-height: 50vh;
   }
 }
+
+/* New Section Added for NPC */
+/*
+ * NPC Intent UI â€”
+ *
+ * These style the expandable intent-picker that replaces the old
+ * single-click "talk" behaviour on NPC rows.
+ *
+ * The CombatScreen injects its own <style> tag at runtime, so no
+ * combat styles are needed here.
+ */
+
+/* â”€â”€ NPC wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.npc-wrapper {
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 4px;
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+
+.npc-wrapper-open {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* â”€â”€ Header row (name + role tag) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.npc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 6px;
+  user-select: none;
+  transition: background 0.12s;
+}
+
+.npc-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.npc-wrapper-open .npc-row {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px 6px 0 0;
+}
+
+.npc-name {
+  flex: 1;
+  font-size: 13px;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* â”€â”€ Role tags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.npc-role-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.npc-role-tag:empty {
+  display: none;
+}
+
+.npc-role-questgiver {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.npc-role-vendor {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.npc-role-hostile {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* â”€â”€ Intent button group â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.npc-intent-group {
+  display: flex;  /* toggled to 'none' when collapsed */
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* â”€â”€ Individual intent buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.npc-intent-btn {
+  flex: 1 0 calc(50% - 4px);   /* two per row */
+  padding: 5px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+.npc-intent-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #f1f5f9;
+}
+
+.npc-intent-btn:active {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Fight button â€” full width, red accent */
+.npc-intent-fight {
+  flex: 1 0 100%;
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.npc-intent-fight:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}

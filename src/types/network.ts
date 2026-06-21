@@ -6,11 +6,18 @@
  *
  * Architecture: Discriminated union on `type` field allows exhaustive
  * type-checking on both ends of the socket connection.
+ *
+ * Phase 2 additions: SkillCheckDisplay on npc_interaction, TalkIntent
+ * on TalkMessage (optional — omitting defaults to "inquire").
+ *
+ * Phase 3 additions: Full combat message family (combat_start,
+ * combat_planning, combat_resolution, combat_end, combat_submit_action).
  */
 
 import type { PartyView, PartyInviteView } from "./party";
 import type { QuestBoardView } from "./quest";
-import type { NpcView, NpcInteractionView } from "./npc";
+import type { NpcView, NpcInteractionView, TalkIntent, DialogueOutcome } from "./npc";
+import type { CombatStateView, CombatEvent, CombatActionSubmission, CombatOutcome } from "./combat";
 
 // ─────────────────────────────────────────────
 // SERVER → CLIENT MESSAGES
@@ -39,10 +46,37 @@ export interface RoomMessage {
   };
 }
 
-/** Sent when a player talks to an NPC — their lines, quests, and stock */
+/**
+ * The result of talking to an NPC.
+ *
+ * Payload is an NpcInteractionView plus two optional fields added by
+ * Phase 2: `checkDisplay` (the roll reveal when a skill check ran) and
+ * `infoReveal` (lore unlocked by a successful check). Extending via
+ * intersection keeps NpcInteractionView itself clean of network concerns.
+ */
 export interface NpcInteractionMessage {
   type: "npc_interaction";
-  payload: NpcInteractionView;
+  payload: NpcInteractionView & {
+    /** Present when the interaction triggered a d20 skill check. */
+    checkDisplay?: SkillCheckDisplay;
+    /** World lore revealed by a successful/critical check. */
+    infoReveal?: string;
+  };
+}
+
+/**
+ * The roll-reveal data for a skill-check conversation.
+ * Rendered by the client as: "Persuasion — 14 + 3 = 17 vs DC 15 — Success"
+ */
+export interface SkillCheckDisplay {
+  skill: string;
+  intent: TalkIntent;
+  d20Result: number;
+  modifier: number;
+  total: number;
+  dc: number;
+  outcome: DialogueOutcome;
+  wasProficient: boolean;
 }
 
 /** A chat message spoken in the room */
@@ -109,9 +143,8 @@ export interface SlotListMessage {
 }
 
 /**
- * Confirms a save just completed (e.g. on disconnect-save we don't send
- * this, but an explicit save command gets an ack). Carries the updated
- * slot summary so the client can refresh its menu if showing.
+ * Confirms a save just completed. Carries the updated slot summary so
+ * the client can refresh its menu if showing.
  */
 export interface SaveResultMessage {
   type: "save_result";
@@ -126,8 +159,7 @@ export interface SaveResultMessage {
 
 /**
  * A full party state snapshot, sent to every member when the party
- * changes. `party` is null when the player is no longer in any party
- * (left or disbanded), telling the client to clear its roster.
+ * changes. `party` is null when the player is no longer in any party.
  */
 export interface PartyUpdateMessage {
   type: "party_update";
@@ -145,13 +177,64 @@ export interface PartyInviteMessage {
 // ── Quest messages ──
 
 /**
- * The quest board snapshot — available quests + the player's active
- * quest. Sent when the player reads the board or when their quest state
- * changes (accept/abandon/complete).
+ * The quest board snapshot — available quests + the player's active quest.
  */
 export interface QuestBoardMessage {
   type: "quest_board";
   payload: QuestBoardView;
+}
+
+// ── Combat messages (Phase 3) ──
+
+/**
+ * Sent once to each player when a combat encounter begins.
+ * Each player receives a personalised view (their entity is flagged).
+ */
+export interface CombatStartMessage {
+  type: "combat_start";
+  payload: CombatStateView;
+}
+
+/**
+ * Sent at the start of each planning round, and whenever the pending
+ * submission list changes (i.e. after each player submits their action).
+ * Each player receives a personalised view.
+ */
+export interface CombatPlanningMessage {
+  type: "combat_planning";
+  payload: {
+    combatId: string;
+    round: number;
+    state: CombatStateView;
+    /** Player ids still waiting to submit their action. */
+    pendingPlayerIds: string[];
+  };
+}
+
+/**
+ * Broadcast to all players after all submissions are collected and the
+ * round has resolved. Contains the ordered event log for animated playback,
+ * plus the final board state to apply when playback finishes.
+ */
+export interface CombatResolutionMessage {
+  type: "combat_resolution";
+  payload: {
+    combatId: string;
+    round: number;
+    events: CombatEvent[];
+    finalState: CombatStateView;
+  };
+}
+
+/** Sent to all players when combat ends. */
+export interface CombatEndMessage {
+  type: "combat_end";
+  payload: {
+    combatId: string;
+    outcome: CombatOutcome;
+    xpReward: number;
+    goldReward: number;
+  };
 }
 
 // ─────────────────────────────────────────────
@@ -166,8 +249,7 @@ export interface IntroCompleteMessage {
 
 /**
  * First message a client sends on connect — identifies the persistent
- * player so the server can scope save slots to them. The playerId is
- * generated client-side and stored in localStorage.
+ * player so the server can scope save slots to them.
  */
 export interface IdentifyMessage {
   type: "identify";
@@ -182,10 +264,7 @@ export interface RequestSlotsMessage {
   payload: Record<string, never>;
 }
 
-/**
- * Player chose "New Game" in a given slot. The slot is remembered so
- * that when the character is created (or on disconnect) we save there.
- */
+/** Player chose "New Game" in a given slot. */
 export interface NewGameMessage {
   type: "new_game";
   payload: {
@@ -232,12 +311,20 @@ export interface CommandMessage {
   };
 }
 
-/** Talk to an NPC in the current room, by name */
+/**
+ * Talk to an NPC in the current room.
+ *
+ * Phase 2: `intent` optionally chooses the conversational approach, which
+ * triggers a d20 skill check against the NPC's dialogue branch DC. Omit
+ * to use the NPC's default dialogue with no check.
+ */
 export interface TalkMessage {
   type: "talk";
   payload: {
     /** NPC name (first name) to talk to */
     targetName: string;
+    /** Conversational approach — triggers a skill check if the NPC has a matching branch */
+    intent?: TalkIntent;
   };
 }
 
@@ -247,7 +334,6 @@ export interface TalkMessage {
 export interface PartyInviteSendMessage {
   type: "party_invite_send";
   payload: {
-    /** Display name of the target player to invite */
     targetName: string;
   };
 }
@@ -290,6 +376,21 @@ export interface QuestAbandonMessage {
   payload: Record<string, never>;
 }
 
+// ── Combat actions (client → server, Phase 3) ──
+
+/**
+ * Submits a player's planned action for the current combat round.
+ * The server collects these from all players then resolves the round
+ * in initiative order once everyone has submitted (or timed out).
+ */
+export interface CombatSubmitActionMessage {
+  type: "combat_submit_action";
+  payload: {
+    combatId: string;
+    submission: CombatActionSubmission;
+  };
+}
+
 // ─────────────────────────────────────────────
 // SHARED ENUMS & SUPPORTING TYPES
 // ─────────────────────────────────────────────
@@ -320,12 +421,6 @@ export interface DialogueChoice {
   value: string;
 }
 
-/**
- * A lightweight summary of one save slot, sent to the client to render
- * the load-game menu. Mirrors the server's SaveSlotSummary but lives
- * here so the client never imports server code. Empty slots have
- * occupied: false and omit the detail fields.
- */
 export interface SaveSlotSummary {
   slot: number;
   occupied: boolean;
@@ -335,13 +430,6 @@ export interface SaveSlotSummary {
   savedAt?: number;
 }
 
-/**
- * CharacterDraft — partial character data accumulated during creation.
- * All fields optional because they are filled in step by step.
- *
- * Note: hairStyle was removed — portraits are full-body sprites selected
- * by (gender, hairColor, class), so style is no longer a creation field.
- */
 export interface CharacterDraft {
   name?: string;
   gender?: Gender;
@@ -368,7 +456,11 @@ export type ServerMessage =
   | PartyUpdateMessage
   | PartyInviteMessage
   | QuestBoardMessage
-  | NpcInteractionMessage;
+  | NpcInteractionMessage
+  | CombatStartMessage
+  | CombatPlanningMessage
+  | CombatResolutionMessage
+  | CombatEndMessage;
 
 /** Every message the client can send to the server */
 export type ClientMessage =
@@ -387,4 +479,5 @@ export type ClientMessage =
   | QuestBoardRequestMessage
   | QuestAcceptMessage
   | QuestAbandonMessage
-  | TalkMessage;
+  | TalkMessage
+  | CombatSubmitActionMessage;
