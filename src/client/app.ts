@@ -87,6 +87,8 @@ class MournvaleClient {
   public start(): void {
     this.playerId = this.loadOrCreatePlayerId();
     this.screens.show("menu");
+    // Defer fog start one frame so #screen-menu has its full painted dimensions
+    requestAnimationFrame(() => this.menu.startFog());
     this.connect();
     this.buildCombatContainer();
 
@@ -191,6 +193,8 @@ class MournvaleClient {
     this.socket.addEventListener("open", () => {
       console.log("[net] connected");
       this.send({ type: "identify", payload: { playerId: this.playerId } });
+      // Request slots immediately on connect so menu is populated on first load
+      this.send({ type: "request_slots", payload: {} });
     });
 
     this.socket.addEventListener("message", (event) => {
@@ -391,11 +395,13 @@ class MournvaleClient {
     switch (newState) {
       case "menu":
         this.menu.reset();
+        this.menu.startFog();
         this.screens.show("menu");
         this.send({ type: "request_slots", payload: {} });
         break;
 
       case "pending":
+        this.menu.stopFog();
         this.screens.show("intro");
         this.intro.start(() => {
           this.send({ type: "intro_complete", payload: {} });

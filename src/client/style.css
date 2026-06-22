@@ -1,21 +1,21 @@
-/* ═══════════════════════════════════════════════
-   style.css — Mournvale SNES Aesthetic
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   style.css â€” Mournvale SNES Aesthetic
    
    Rules enforced:
-   ✅ Press Start 2P pixel font throughout
-   ✅ Hard pixel borders (2px solid) on all panels
-   ✅ Tile-based / grid layouts
-   ✅ Step-based cursor animations only
-   ❌ No border-radius > 2px on panels
-   ❌ No box-shadow with blur > 0
-   ❌ No opacity glass overlays
-   ❌ No system fonts
-   ❌ No smooth CSS transitions
-   ══════════════════════════════════════════════ */
+   âœ… Press Start 2P pixel font throughout
+   âœ… Hard pixel borders (2px solid) on all panels
+   âœ… Tile-based / grid layouts
+   âœ… Step-based cursor animations only
+   âŒ No border-radius > 2px on panels
+   âŒ No box-shadow with blur > 0
+   âŒ No opacity glass overlays
+   âŒ No system fonts
+   âŒ No smooth CSS transitions
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    RESET & BASE
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -24,39 +24,22 @@
 }
 
 :root {
-  /*
-   * Game Boy Pocket grayscale palette.
-   *
-   * The original DMG/Pocket hardware displayed only 4 shades. We anchor
-   * to those 4 and add a couple of intermediate grays for borders/dim
-   * text so the UI stays readable. No hue — pure neutral gray.
-   *
-   *   shade 0 (darkest)  #0f0f0f
-   *   shade 1            #4a4a4a
-   *   shade 2            #8a8a8a
-   *   shade 3 (lightest) #e0e0e0
-   */
-
-  /* Backgrounds — darkest shades */
+  /* Game Boy Pocket grayscale palette */
   --color-bg:           #0f0f0f;
   --color-bg-panel:     #1c1c1c;
   --color-bg-panel-alt: #262626;
   --color-border:       #5a5a5a;
   --color-border-light: #8a8a8a;
-  /* "gold" accent retained as a name but mapped to lightest gray so any
-     leftover references stay on-palette without a rewrite */
   --color-border-gold:  #b0b0b0;
 
-  /* Text — light shades on dark */
   --color-text:         #e0e0e0;
   --color-text-dim:     #8a8a8a;
-  --color-text-gold:    #d8d8d8;  /* headings — near-white gray */
-  --color-text-system:  #b0b0b0;  /* system lines — mid-light gray */
-  --color-text-chat:    #ffffff;  /* chat — pure white for emphasis */
-  --color-text-error:   #c0c0c0;  /* errors — light gray (no red on GB) */
-  --color-text-presence:#9a9a9a;  /* presence — muted gray */
+  --color-text-gold:    #d8d8d8;
+  --color-text-system:  #b0b0b0;
+  --color-text-chat:    #ffffff;
+  --color-text-error:   #c0c0c0;
+  --color-text-presence:#9a9a9a;
 
-  /* Buttons */
   --color-btn-bg:       #2e2e2e;
   --color-btn-border:   #6a6a6a;
   --color-btn-hover-bg: #3e3e3e;
@@ -65,10 +48,8 @@
   --color-cursor:       #e0e0e0;
   --color-selection:    #3e3e3e;
 
-  /* Typography */
   --font-pixel: 'Press Start 2P', monospace;
 
-  /* Sizing */
   --panel-gap: 4px;
   --panel-pad: 12px;
   --border-width: 2px;
@@ -86,11 +67,9 @@ html, body {
   image-rendering: pixelated;
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    SCREEN SYSTEM
-   All screens occupy full viewport.
-   Only one is visible at a time via .screen-active / .hidden.
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .screen {
   position: fixed;
@@ -109,14 +88,13 @@ html, body {
   display: none !important;
 }
 
-/* ─────────────────────────────────────────────
-   SNES PANEL — reusable bordered box
-───────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   SNES PANEL
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .snes-panel {
   background: var(--color-bg-panel);
   border: var(--border-width) solid var(--color-border);
-  /* SNES-style double-line inner border effect using outline */
   outline: var(--border-width) solid var(--color-bg);
   outline-offset: -4px;
   padding: var(--panel-pad);
@@ -135,27 +113,14 @@ html, body {
   margin: 10px 0;
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    MAIN MENU SCREEN
-───────────────────────────────────────────── */
+   No grid background â€” fog canvas handles it.
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #screen-menu {
-  background:
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 31px,
-      #181818 31px,
-      #181818 32px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 31px,
-      #181818 31px,
-      #181818 32px
-    );
-  background-color: var(--color-bg);
+  /* position: relative is set by menu-intro-fog.css for the canvas */
+  background: #0a0608;
   justify-content: center;
   align-items: center;
 }
@@ -167,6 +132,9 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: 16px;
+  /* sit above the fog canvas */
+  position: relative;
+  z-index: 2;
 }
 
 #menu-title {
@@ -199,7 +167,7 @@ html, body {
   letter-spacing: 3px;
 }
 
-/* ── Slot picker ── */
+/* â”€â”€ Slot picker â”€â”€ */
 
 #menu-slot-panel {
   width: 100%;
@@ -268,7 +236,7 @@ html, body {
 
 .btn-disabled,
 .snes-btn:disabled {
-  opacity: 1; /* no opacity glass — use color instead */
+  opacity: 1;
   color: var(--color-border);
   border-color: var(--color-border);
   cursor: not-allowed;
@@ -285,12 +253,13 @@ html, body {
   font-size: 8px;
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    INTRO SCREEN
-───────────────────────────────────────────── */
+   No hardcoded background â€” fog canvas handles it.
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #screen-intro {
-  background: #000;
+  /* background and positioning handled by menu-intro-fog.css */
   justify-content: center;
   align-items: center;
 }
@@ -299,6 +268,9 @@ html, body {
   max-width: 700px;
   width: 90%;
   padding: 24px;
+  /* sit above the fog canvas */
+  position: relative;
+  z-index: 2;
 }
 
 #intro-header {
@@ -327,7 +299,6 @@ html, body {
   text-align: right;
 }
 
-/* Step-based blink — no smooth transition */
 .blink {
   animation: blink-step 1s steps(1) infinite;
 }
@@ -337,9 +308,9 @@ html, body {
   50%       { opacity: 0; }
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    CHARACTER CREATION SCREEN
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #screen-creation {
   background: var(--color-bg);
@@ -380,8 +351,6 @@ html, body {
   text-shadow: 2px 2px 0 #000;
 }
 
-/* ── Character portrait preview ── */
-
 .portrait-frame {
   margin-top: 18px;
   display: flex;
@@ -403,7 +372,6 @@ html, body {
   border: 1px solid var(--color-border);
 }
 
-/* Make the inline SVG fill its frame crisply */
 .portrait-img svg {
   width: 100%;
   height: 100%;
@@ -472,9 +440,9 @@ html, body {
   color: var(--color-cursor);
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    GAME SCREEN
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #screen-game {
   display: grid;
@@ -485,7 +453,7 @@ html, body {
   overflow: hidden;
 }
 
-/* ── Header ── */
+/* â”€â”€ Header â”€â”€ */
 
 #game-header {
   display: flex;
@@ -529,19 +497,17 @@ html, body {
   letter-spacing: 1px;
 }
 
-/* ── Body ── */
+/* â”€â”€ Body â”€â”€ */
 
 #game-body {
   display: grid;
-  /* Three columns: Details | Room SVG | Log.
-     Center column is sized to the square image; sides share the rest. */
   grid-template-columns: 1fr 1.1fr 1fr;
   gap: var(--panel-gap);
   min-height: 0;
   overflow: hidden;
 }
 
-/* ── Details Panel (left column) ── */
+/* â”€â”€ Details Panel (left column) â”€â”€ */
 
 #details-panel {
   display: flex;
@@ -551,7 +517,7 @@ html, body {
   scrollbar-color: var(--color-border) var(--color-bg-panel);
 }
 
-/* ── Room Image Panel (center column) ── */
+/* â”€â”€ Room Image Panel (center column) â”€â”€ */
 
 #room-image-panel {
   display: flex;
@@ -559,7 +525,6 @@ html, body {
   overflow: hidden;
 }
 
-/* The square room image — maintains 1:1 aspect ratio, centered */
 .room-image {
   width: 100%;
   aspect-ratio: 1 / 1;
@@ -580,7 +545,6 @@ html, body {
   image-rendering: pixelated;
 }
 
-/* Placeholder text when a room has no art */
 .room-image-empty {
   color: var(--color-text-dim);
   font-size: 8px;
@@ -613,29 +577,13 @@ html, body {
   line-height: 1.8;
 }
 
-/* NPCs present in the room — styled distinctly from players.
-   Empty until an NPC system exists; ready for it. */
 .room-npcs-text {
   color: var(--color-text-system);
   font-size: 8px;
   line-height: 1.8;
 }
 
-/* Clickable NPC rows in the "Here" list */
-.npc-row {
-  color: var(--color-text-system);
-  font-size: 8px;
-  line-height: 1.9;
-  cursor: pointer;
-  padding: 1px 2px;
-}
-
-.npc-row:hover {
-  color: var(--color-text-gold);
-  background: var(--color-bg-panel-alt);
-}
-
-/* ── Log Panel ── */
+/* â”€â”€ Log Panel â”€â”€ */
 
 #log-panel {
   display: flex;
@@ -667,7 +615,7 @@ html, body {
 .log-presence { color: var(--color-text-presence); }
 .log-default  { color: var(--color-text); }
 
-/* ── Footer ── */
+/* â”€â”€ Footer â”€â”€ */
 
 #game-footer {
   display: grid;
@@ -675,7 +623,7 @@ html, body {
   gap: var(--panel-gap);
 }
 
-/* ── Command Menu ── */
+/* â”€â”€ Command Menu â”€â”€ */
 
 #command-menu {
   padding: 8px 12px;
@@ -713,7 +661,7 @@ html, body {
   color: var(--color-cursor);
 }
 
-/* ── Input Panel ── */
+/* â”€â”€ Input Panel â”€â”€ */
 
 #input-panel {
   display: flex;
@@ -728,9 +676,9 @@ html, body {
   flex-shrink: 0;
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    SHARED INPUT ELEMENTS
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .pixel-input {
   flex: 1;
@@ -781,9 +729,9 @@ html, body {
   background: var(--color-selection);
 }
 
-/* ─────────────────────────────────────────────
-   DIALOGUE BOX (shared by creation + game)
-───────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   DIALOGUE BOX
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .snes-dialogue {
   background: var(--color-bg-panel);
@@ -796,26 +744,18 @@ html, body {
   color: var(--color-text);
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    SCROLLBAR STYLING (Webkit)
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: var(--color-bg-panel);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-light);
-}
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-bg-panel); }
+::-webkit-scrollbar-thumb { background: var(--color-border); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-border-light); }
 
-/* ─────────────────────────────────────────────
-   PARTY ROSTER
-───────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   PARTY ROSTER (legacy â€” kept for compatibility)
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .party-members-text {
   font-size: 8px;
@@ -834,9 +774,9 @@ html, body {
   padding: 5px 8px;
 }
 
-/* ─────────────────────────────────────────────
-   OVERLAYS (quest board, invite prompt)
-───────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   OVERLAYS
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .overlay {
   position: fixed;
@@ -870,8 +810,6 @@ html, body {
   padding: 4px 8px;
   font-size: 8px;
 }
-
-/* ── Quest board ── */
 
 .quest-list {
   display: flex;
@@ -936,8 +874,6 @@ html, body {
   margin-bottom: 6px;
 }
 
-/* ── Invite prompt ── */
-
 .invite-panel {
   max-width: 380px;
   text-align: center;
@@ -956,51 +892,33 @@ html, body {
   justify-content: center;
 }
 
-/* ─────────────────────────────────────────────
-   RESPONSIVE — narrow screens stack vertically
-───────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   RESPONSIVE
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 @media (max-width: 700px) {
   #game-body {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr; /* details, room, log stacked */
+    grid-template-rows: auto auto 1fr;
   }
 
-  #details-panel {
-    max-height: 30vh;
-  }
-
-  #room-image-panel {
-    max-height: 50vh;
-  }
+  #details-panel { max-height: 30vh; }
+  #room-image-panel { max-height: 50vh; }
 }
 
-/* New Section Added for NPC */
-/*
- * NPC Intent UI â€”
- *
- * These style the expandable intent-picker that replaces the old
- * single-click "talk" behaviour on NPC rows.
- *
- * The CombatScreen injects its own <style> tag at runtime, so no
- * combat styles are needed here.
- */
-
-/* â”€â”€ NPC wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   NPC INTENT UI
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .npc-wrapper {
-  border-radius: 6px;
   overflow: hidden;
   margin-bottom: 4px;
   border: 1px solid transparent;
-  transition: border-color 0.15s;
 }
 
 .npc-wrapper-open {
   border-color: rgba(255, 255, 255, 0.12);
 }
-
-/* â”€â”€ Header row (name + role tag) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .npc-row {
   display: flex;
@@ -1009,9 +927,7 @@ html, body {
   gap: 8px;
   padding: 6px 8px;
   cursor: pointer;
-  border-radius: 6px;
   user-select: none;
-  transition: background 0.12s;
 }
 
 .npc-row:hover {
@@ -1020,99 +936,195 @@ html, body {
 
 .npc-wrapper-open .npc-row {
   background: rgba(255, 255, 255, 0.06);
-  border-radius: 6px 6px 0 0;
 }
 
 .npc-name {
   flex: 1;
-  font-size: 13px;
-  color: #e2e8f0;
+  font-size: 8px;
+  color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* â”€â”€ Role tags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
 .npc-role-tag {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  font-size: 7px;
+  padding: 1px 4px;
   white-space: nowrap;
   flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
 }
 
-.npc-role-tag:empty {
-  display: none;
-}
+.npc-role-tag:empty { display: none; }
 
-.npc-role-questgiver {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-  border: 1px solid rgba(245, 158, 11, 0.3);
-}
-
-.npc-role-vendor {
-  background: rgba(59, 130, 246, 0.12);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.25);
-}
-
-.npc-role-hostile {
-  background: rgba(239, 68, 68, 0.12);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.25);
-}
-
-/* â”€â”€ Intent button group â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.npc-role-questgiver { color: var(--color-text-gold); border-color: var(--color-border-gold); }
+.npc-role-vendor     { color: var(--color-text-system); }
+.npc-role-hostile    { color: var(--color-text-error); border-color: var(--color-text-error); }
 
 .npc-intent-group {
-  display: flex;  /* toggled to 'none' when collapsed */
+  display: flex;
   flex-wrap: wrap;
   gap: 4px;
   padding: 6px 8px 8px;
-  background: rgba(0, 0, 0, 0.25);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--color-bg-panel-alt);
+  border-top: 1px solid var(--color-border);
 }
 
-/* â”€â”€ Individual intent buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
 .npc-intent-btn {
-  flex: 1 0 calc(50% - 4px);   /* two per row */
+  flex: 1 0 calc(50% - 4px);
   padding: 5px 8px;
-  font-size: 11px;
-  font-family: inherit;
-  color: #cbd5e1;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 5px;
+  font-size: 7px;
+  font-family: var(--font-pixel);
+  color: var(--color-text);
+  background: var(--color-btn-bg);
+  border: var(--border-width) solid var(--color-btn-border);
   cursor: pointer;
   text-align: center;
-  transition: background 0.1s, border-color 0.1s, color 0.1s;
+  letter-spacing: 0.5px;
 }
 
 .npc-intent-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.22);
-  color: #f1f5f9;
+  background: var(--color-btn-hover-bg);
+  border-color: var(--color-border-gold);
+  color: var(--color-text-gold);
 }
 
 .npc-intent-btn:active {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--color-selection);
 }
 
-/* Fight button â€” full width, red accent */
 .npc-intent-fight {
   flex: 1 0 100%;
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #f87171;
+  color: var(--color-text-error);
+  border-color: var(--color-text-error);
 }
 
 .npc-intent-fight:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
-  color: #fca5a5;
+  background: #2a1515;
+  border-color: var(--color-text-error);
+  color: var(--color-text-error);
+}
+
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   LEFT PANEL â€” stacked Here: and Party: sections
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.left-panel-divider {
+  border-top: 1px solid var(--color-border);
+  margin: 10px 0;
+}
+
+.room-npcs-empty,
+.party-empty {
+  color: var(--color-text-dim);
+  font-size: 8px;
+  font-style: normal;
+  line-height: 1.8;
+}
+
+/* â”€â”€ Party member cards â”€â”€ */
+
+.party-member-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: var(--color-bg-panel-alt);
+  border: var(--border-width) solid var(--color-border);
+}
+
+.party-member-card:last-child {
+  margin-bottom: 0;
+}
+
+.party-member-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.party-member-name {
+  font-size: 8px;
+  color: var(--color-text-gold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.party-member-class {
+  font-size: 7px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.party-member-hp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.party-hp-bar-track {
+  flex: 1;
+  height: 4px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+
+.party-hp-bar-fill {
+  height: 100%;
+  background: var(--color-text-system);
+  transition: none;
+}
+
+.party-hp-bar-fill[data-hp-pct="low"] { background: var(--color-text-error); }
+.party-hp-bar-fill[data-hp-pct="mid"] { background: var(--color-text-dim); }
+
+.party-hp-label {
+  font-size: 7px;
+  color: var(--color-text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: right;
+}
+
+.party-member-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.party-stat {
+  font-size: 7px;
+  color: var(--color-text-dim);
+}
+
+.party-stat strong {
+  color: var(--color-text);
+}
+
+.party-status-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.party-status-tag {
+  font-size: 7px;
+  padding: 1px 4px;
+  background: var(--color-bg-panel-alt);
+  color: var(--color-text-error);
+  border: 1px solid var(--color-text-error);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.party-status-tag.status-buff {
+  color: var(--color-text-system);
+  border-color: var(--color-text-system);
 }

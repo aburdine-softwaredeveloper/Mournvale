@@ -1,21 +1,22 @@
 /**
  * GameScreen.ts — The main game interface for active players
  *
- * Responsibilities:
- *   - Render the room panel (name, description, exits, occupants)
- *   - Append messages to the scrolling log (system/chat/presence/error)
- *   - Host the CommandMenu (clickable command buttons)
- *   - Handle the text input for custom/typed commands
+ * Left panel layout (stacked, always visible):
+ *   ┌─────────────────┐
+ *   │ HERE:           │  ← NPCs at the current location only
+ *   │  Merchant       │     "No one is here." if empty
+ *   │  Guard          │
+ *   ├─────────────────┤  ← thin divider
+ *   │ PARTY:          │  ← party members (blank section if solo)
+ *   │  Aelric  HP ██  │
+ *   └─────────────────┘
  *
- * Phase 2 additions:
- *   - NPC rows now expand on click to reveal intent buttons rather than
- *     immediately sending a bare "talk <name>". The four intents
- *     (Inquire / Persuade / Intimidate / Deceive) each send a targeted
- *     "talk <name> <intent>" command. Hostile NPCs show a Fight button
- *     instead, which will hook into combat when Phase 3 is integrated.
+ * Players / party members are never listed in the Here: section.
+ * Party state comes exclusively from updateParty(); the players[]
+ * field on RoomMessage is intentionally ignored.
  *
- * All outgoing commands flow through a single onCommand callback that
- * the app forwards to the server.
+ * Phase 2 NPC intent buttons are preserved unchanged.
+ * All outgoing commands flow through the onCommand callback.
  */
 
 import { CommandMenu, DEFAULT_COMMANDS } from "../components/CommandMenu";
@@ -40,10 +41,10 @@ interface IntentOption {
 }
 
 const INTENT_OPTIONS: IntentOption[] = [
-  { intent: "inquire",   label: "Inquire",    title: "Ask a direct question (Insight)" },
-  { intent: "persuade",  label: "Persuade",   title: "Appeal to reason or emotion (Persuasion)" },
-  { intent: "intimidate",label: "Intimidate", title: "Use force of personality (Intimidation)" },
-  { intent: "deceive",   label: "Deceive",    title: "Mislead or misdirect (Deception)" },
+  { intent: "inquire",    label: "Inquire",    title: "Ask a direct question (Insight)" },
+  { intent: "persuade",   label: "Persuade",   title: "Appeal to reason or emotion (Persuasion)" },
+  { intent: "intimidate", label: "Intimidate", title: "Use force of personality (Intimidation)" },
+  { intent: "deceive",    label: "Deceive",    title: "Mislead or misdirect (Deception)" },
 ];
 
 // ─────────────────────────────────────────────
@@ -51,19 +52,24 @@ const INTENT_OPTIONS: IntentOption[] = [
 // ─────────────────────────────────────────────
 
 export class GameScreen {
+  // Header
   private readonly headerName: HTMLElement;
   private readonly headerClass: HTMLElement;
+  private readonly headerPortrait: HTMLElement;
+
+  // Room panel
   private readonly roomName: HTMLElement;
   private readonly roomDesc: HTMLElement;
   private readonly roomExits: HTMLElement;
-  private readonly roomPlayers: HTMLElement;
   private readonly roomNpcs: HTMLElement;
+  private readonly roomImage: HTMLElement;
+
+  // Log + input
   private readonly messageLog: HTMLElement;
   private readonly commandInput: HTMLInputElement;
   private readonly commandSend: HTMLButtonElement;
-  private readonly headerPortrait: HTMLElement;
-  private readonly roomImage: HTMLElement;
 
+  // Sub-components
   private readonly commandMenu: CommandMenu;
   private readonly partyPanel: PartyPanel;
   private onCommand: ((input: string) => void) | null = null;
@@ -73,26 +79,28 @@ export class GameScreen {
 
   /**
    * Id of the NPC row currently expanded to show intent buttons.
-   * Null when no row is open. Clicking a different row closes the current one.
+   * Null when no row is open.
    */
   private expandedNpcId: string | null = null;
 
   constructor() {
-    this.headerName    = this.requireEl("player-name-display");
-    this.headerClass   = this.requireEl("player-class-display");
-    this.roomName      = this.requireEl("room-name");
-    this.roomDesc      = this.requireEl("room-description");
-    this.roomExits     = this.requireEl("room-exits");
-    this.roomPlayers   = this.requireEl("room-players");
-    this.roomNpcs      = this.requireEl("room-npcs");
-    this.messageLog    = this.requireEl("message-log");
-    this.commandInput  = this.requireEl("command-input") as HTMLInputElement;
-    this.commandSend   = this.requireEl("command-send") as HTMLButtonElement;
-    this.headerPortrait= this.requireEl("header-portrait");
-    this.roomImage     = this.requireEl("room-image");
+    this.headerName     = this.requireEl("player-name-display");
+    this.headerClass    = this.requireEl("player-class-display");
+    this.headerPortrait = this.requireEl("header-portrait");
+
+    this.roomName  = this.requireEl("room-name");
+    this.roomDesc  = this.requireEl("room-description");
+    this.roomExits = this.requireEl("room-exits");
+    this.roomNpcs  = this.requireEl("room-npcs");
+    this.roomImage = this.requireEl("room-image");
+
+    this.messageLog   = this.requireEl("message-log");
+    this.commandInput = this.requireEl("command-input") as HTMLInputElement;
+    this.commandSend  = this.requireEl("command-send")  as HTMLButtonElement;
 
     this.commandMenu = new CommandMenu("command-buttons");
     this.partyPanel  = new PartyPanel();
+
     this.wireInput();
   }
 
@@ -130,15 +138,16 @@ export class GameScreen {
   }
 
   public updateRoom(msg: RoomMessage): void {
-    const { name, description, exits, players, npcs, artKey } = msg.payload;
+    const { name, description, exits, npcs, artKey } = msg.payload;
 
-    this.roomName.textContent = name;
-    this.roomDesc.textContent = description;
+    // NOTE: msg.payload.players is intentionally unused here.
+    // Party member presence is managed exclusively via updateParty().
+    // Only NPCs appear in the Here: section.
+
+    this.roomName.textContent  = name;
+    this.roomDesc.textContent  = description;
     this.roomExits.textContent = exits.length > 0 ? exits.join(", ") : "none";
-    this.roomPlayers.textContent =
-      players.length > 0 ? players.join("\n") : "You are alone.";
 
-    // Reset expanded state when the room changes
     this.expandedNpcId = null;
     this.renderNpcs(npcs);
     this.updateRoomImage(artKey);
@@ -146,39 +155,38 @@ export class GameScreen {
 
   public log(text: string, kind: LogKind = "default"): void {
     const entry = document.createElement("div");
-    entry.className = `log-entry log-${kind}`;
+    entry.className   = `log-entry log-${kind}`;
     entry.textContent = text;
     this.messageLog.appendChild(entry);
     this.messageLog.scrollTop = this.messageLog.scrollHeight;
   }
 
   // ─────────────────────────────────────────────
-  // NPC RENDERING (Phase 2)
+  // NPC RENDERING
   // ─────────────────────────────────────────────
 
   /**
-   * Renders the NPC list in the room panel.
-   *
-   * Each NPC row is a two-part element:
-   *   - Header row: name + title, clickable to toggle the intent group
-   *   - Intent group: 4 intent buttons (or Fight for hostile), revealed on click
-   *
-   * Clicking an intent sends "talk <npc.name> <intent>" through the normal
-   * command path, which the app parses into a structured TalkMessage.
-   *
-   * Hostile NPCs skip the intent buttons and show a single "Fight" button,
-   * which sends "fight <npc.name>" (server routes to combat trigger).
+   * Renders the Here: section with NPCs only.
+   * Shows "No one is here." when the list is empty.
+   * Party members are never rendered here.
    */
   private renderNpcs(npcs: NpcView[]): void {
     this.roomNpcs.innerHTML = "";
-    if (npcs.length === 0) return;
+
+    if (npcs.length === 0) {
+      const empty = document.createElement("span");
+      empty.className   = "room-npcs-empty";
+      empty.textContent = "No one is here.";
+      this.roomNpcs.appendChild(empty);
+      return;
+    }
 
     for (const npc of npcs) {
       const wrapper = document.createElement("div");
-      wrapper.className = "npc-wrapper";
+      wrapper.className        = "npc-wrapper";
       wrapper.dataset["npcId"] = npc.id;
 
-      // ── Header row (always visible) ─────────────────────────────────────
+      // ── Header row ──────────────────────────────────────────────────────
       const header = document.createElement("div");
       header.className = "npc-row";
       header.title     = npc.role === "hostile"
@@ -196,13 +204,12 @@ export class GameScreen {
       header.appendChild(nameSpan);
       header.appendChild(roleTag);
 
-      // ── Intent group (shown on click) ────────────────────────────────────
+      // ── Intent group ─────────────────────────────────────────────────────
       const intentGroup = document.createElement("div");
-      intentGroup.className = "npc-intent-group";
+      intentGroup.className     = "npc-intent-group";
       intentGroup.style.display = "none";
 
       if (npc.role === "hostile") {
-        // Hostile NPCs: single Fight button
         const fightBtn = document.createElement("button");
         fightBtn.className   = "npc-intent-btn npc-intent-fight";
         fightBtn.textContent = "⚔ Fight";
@@ -214,7 +221,6 @@ export class GameScreen {
         });
         intentGroup.appendChild(fightBtn);
       } else {
-        // Non-hostile NPCs: four intent buttons
         for (const option of INTENT_OPTIONS) {
           const btn = document.createElement("button");
           btn.className   = "npc-intent-btn";
@@ -233,16 +239,15 @@ export class GameScreen {
       header.addEventListener("click", () => {
         const isOpen = intentGroup.style.display !== "none";
 
-        // Close any previously open row first
         if (this.expandedNpcId && this.expandedNpcId !== npc.id) {
-          const prev = this.roomNpcs.querySelector<HTMLElement>(
+          const prevGroup = this.roomNpcs.querySelector<HTMLElement>(
             `[data-npc-id="${this.expandedNpcId}"] .npc-intent-group`
           );
-          const prevWrapper = this.roomNpcs.querySelector<HTMLElement>(
+          const prevWrap = this.roomNpcs.querySelector<HTMLElement>(
             `[data-npc-id="${this.expandedNpcId}"]`
           );
-          if (prev) prev.style.display = "none";
-          if (prevWrapper) prevWrapper.classList.remove("npc-wrapper-open");
+          if (prevGroup) prevGroup.style.display = "none";
+          if (prevWrap)  prevWrap.classList.remove("npc-wrapper-open");
         }
 
         if (isOpen) {
@@ -268,7 +273,6 @@ export class GameScreen {
     this.expandedNpcId = null;
   }
 
-  /** Short role label shown as a tag on each NPC row. */
   private roleLabel(role: NpcRole): string {
     const labels: Record<NpcRole, string> = {
       dialogue:   "",
@@ -297,20 +301,37 @@ export class GameScreen {
     const cached = assetRegistry.get(key);
 
     if (cached) {
-      this.roomImage.innerHTML = cached;
+      this.setRoomImageContent(artKey, cached);
       return;
     }
 
     void assetRegistry
       .load(key)
-      .then((svg) => {
-        if (this.currentArtKey === artKey) this.roomImage.innerHTML = svg;
+      .then((content) => {
+        if (this.currentArtKey === artKey) this.setRoomImageContent(artKey, content);
       })
       .catch(() => {
         if (this.currentArtKey === artKey) {
           this.roomImage.innerHTML = '<div class="room-image-empty">— no view —</div>';
         }
       });
+  }
+
+  /**
+   * PNG assets (project standard) render as <img>.
+   * Legacy SVG content is injected directly.
+   */
+  private setRoomImageContent(artKey: string, content: string): void {
+    if (artKey.endsWith(".png")) {
+      const img     = document.createElement("img");
+      img.src       = content;
+      img.alt       = artKey;
+      img.className = "room-image-png";
+      this.roomImage.innerHTML = "";
+      this.roomImage.appendChild(img);
+    } else {
+      this.roomImage.innerHTML = content;
+    }
   }
 
   // ─────────────────────────────────────────────

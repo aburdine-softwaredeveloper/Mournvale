@@ -12,6 +12,7 @@
   />
 
   <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./menu-intro-fog.css" />
 </head>
 <body>
 
@@ -111,11 +112,12 @@
       </div>
     </header>
 
-    <!-- Main content: three columns — Details | Room SVG | Log -->
+    <!-- Main content: three columns — Details | Room Image | Log -->
     <div id="game-body">
 
-      <!-- Left column: room details, occupants, party -->
+      <!-- Left column: location info, NPCs, party -->
       <div id="details-panel" class="snes-panel">
+
         <div class="panel-title">◆ LOCATION</div>
         <div id="room-name" class="room-name-text">—</div>
         <div id="room-description" class="room-desc-text"></div>
@@ -127,18 +129,19 @@
 
         <div class="panel-divider"></div>
 
+        <!-- HERE: NPCs at this location only. -->
+        <!-- "No one is here." shown by GameScreen when list is empty. -->
+        <!-- room-players has been removed — party is shown below. -->
         <div class="panel-title">◆ HERE</div>
-        <div id="room-players" class="room-players-text">You are alone.</div>
         <div id="room-npcs" class="room-npcs-text"></div>
 
         <div class="panel-divider"></div>
 
-        <!-- Party roster — hidden until in a party -->
-        <div id="party-roster" class="hidden">
-          <div class="panel-title">◆ PARTY</div>
-          <div id="party-members" class="party-members-text"></div>
-          <button id="party-leave-btn" class="snes-btn party-leave">LEAVE PARTY</button>
-        </div>
+        <!-- PARTY: always visible, blank when solo. -->
+        <!-- Populated by PartyPanel.update() via GameScreen.updateParty(). -->
+        <div class="panel-title">◆ PARTY</div>
+        <div id="party-panel-container"></div>
+
       </div>
 
       <!-- Center column: square room image -->
