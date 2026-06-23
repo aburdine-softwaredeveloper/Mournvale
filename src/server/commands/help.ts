@@ -8,6 +8,7 @@ export function help(): string {
     "  COMMANDS",
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
     "  look              — describe your surroundings",
+    "  map               — show the town map",
     "  say <message>     — speak to everyone in the room",
     "  say <name> <...>  — talk TO someone here (an NPC will reply)",
     "  persuade/intimidate/inquire/deceive <name> <...>",

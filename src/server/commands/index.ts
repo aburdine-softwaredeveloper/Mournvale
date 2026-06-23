@@ -10,6 +10,7 @@ import { look } from "./look";
 import { say } from "./say";
 import { help } from "./help";
 import { move } from "./move";
+import { townMap } from "./map";
 import { getPlayerById } from "../gameState";
 
 export function handleCommand(playerId: string, input: string): string {
@@ -37,6 +38,9 @@ export function handleCommand(playerId: string, input: string): string {
 
     case "help":
       return help();
+
+    case "map":
+      return townMap(playerId);
 
     case "north":
     case "south":

@@ -37,6 +37,7 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   { command: "invite", label: "Invite", shortcut: "i", needsArgument: true },
   { command: "party", label: "Party", shortcut: "p" },
   { command: "quests", label: "Quests", shortcut: "q" },
+  { command: "map",    label: "Map",    shortcut: "m" },
   { command: "skills", label: "Skills", shortcut: "c" },
   { command: "help",  label: "Help",  shortcut: "h" },
 ];
