@@ -7,12 +7,22 @@
  *   - This registry is the only place asset paths live
  *   - Everything else references assets by a string key
  *
- * Paths follow: /assets/{category}/{name}.svg
+ * Paths follow: /assets/{category}/{name}.{ext}
  * Categories: characters, npcs, enemies, tiles, ui
+ *
+ * Formats: an asset key may carry an explicit extension (".png" or ".svg").
+ * Bare keys default to ".svg" for back-compat. This lets a single key resolve
+ * to either format so art can migrate file-by-file with no code change — e.g.
+ * "tiles/tavern" → /assets/tiles/tavern.svg, "tiles/tavern.png" → …/tavern.png.
+ *
+ *   - SVG keys are fetched as TEXT and injected inline (themeable, current path)
+ *   - PNG (and other raster) keys are NOT fetched here — use resolveUrl(key)
+ *     and load them lazily via an <img src> / <image href>, like portraits
  *
  * Usage:
  *   await assetRegistry.preload(["characters/knight", "characters/mage"]);
  *   const svg = assetRegistry.get("characters/knight"); // raw SVG markup
+ *   const url = assetRegistry.resolveUrl("tiles/tavern.png"); // for <img>
  *
  * The registry caches fetched SVG text so each asset loads once. Callers
  * inject the markup into the DOM (e.g. element.innerHTML = svg), which
@@ -55,9 +65,30 @@ export class AssetRegistry {
     this.basePath = basePath.replace(/\/$/, "");
   }
 
-  /** Resolves an asset key to its runtime URL. */
+  /** Matches an explicit raster/vector extension on a key. */
+  private static readonly EXT_RE = /\.(png|svg|jpg|jpeg|webp|gif)$/i;
+
+  /**
+   * Resolves an asset key to its runtime URL. Keys with an explicit extension
+   * are used as-is; bare keys default to ".svg" for back-compat.
+   */
   private urlFor(key: AssetKey): string {
-    return `${this.basePath}/${key}.svg`;
+    const ext = AssetRegistry.EXT_RE.test(key) ? "" : ".svg";
+    return `${this.basePath}/${key}${ext}`;
+  }
+
+  /**
+   * Public URL resolver for keys that should load directly via the browser
+   * (raster images via <img src> / <image href>), rather than being fetched
+   * as text. Same resolution rules as the internal loader.
+   */
+  public resolveUrl(key: AssetKey): string {
+    return this.urlFor(key);
+  }
+
+  /** True when a key refers to a raster image (PNG/JPG/…), not inline SVG. */
+  public isRaster(key: AssetKey): boolean {
+    return /\.(png|jpg|jpeg|webp|gif)$/i.test(key);
   }
 
   /**

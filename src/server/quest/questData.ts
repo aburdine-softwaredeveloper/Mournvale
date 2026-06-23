@@ -34,6 +34,7 @@ export const AUTHORED_QUESTS: Quest[] = [
     reward: { gold: 15, xp: 25 },
     recommendedSize: 1,
     generated: false,
+    objectiveRoomId: "cellar",
   },
   {
     id: "authored-fog-scout",

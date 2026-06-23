@@ -40,12 +40,25 @@ export const players = new Map<WebSocket, Player>();
 // ─────────────────────────────────────────────
 
 /**
- * Look up a player by their UUID.
- * Used when you only have a player ID (e.g. in command handlers).
+ * Look up a player by their per-session UUID (`Player.id`).
+ * Used when you only have a session id (e.g. in command handlers).
  */
 export function getPlayerById(playerId: string): Player | undefined {
   for (const player of players.values()) {
     if (player.id === playerId) return player;
+  }
+  return undefined;
+}
+
+/**
+ * Look up a player by their persistent identity (`Player.playerId`, supplied
+ * via the identify message and used to key sockets and combat entities).
+ * Returns the first match — two tabs sharing a playerId is an edge case the
+ * combat/save flow does not support concurrently.
+ */
+export function getPlayerByPlayerId(playerId: string): Player | undefined {
+  for (const player of players.values()) {
+    if (player.playerId === playerId) return player;
   }
   return undefined;
 }

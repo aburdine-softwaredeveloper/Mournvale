@@ -18,6 +18,8 @@ import type { PartyView, PartyInviteView } from "./party";
 import type { QuestBoardView } from "./quest";
 import type { NpcView, NpcInteractionView, TalkIntent, DialogueOutcome } from "./npc";
 import type { CombatStateView, CombatEvent, CombatActionSubmission, CombatOutcome } from "./combat";
+import type { AbilityScore } from "./character";
+import type { TalentNode, TalentNodeState } from "./progression";
 
 // ─────────────────────────────────────────────
 // SERVER → CLIENT MESSAGES
@@ -182,6 +184,63 @@ export interface PartyInviteMessage {
 export interface QuestBoardMessage {
   type: "quest_board";
   payload: QuestBoardView;
+}
+
+// ── Character / skills screen ──
+
+/** A talent node plus the per-character state the client needs to render it. */
+export interface SkillTalentNodeView extends TalentNode {
+  /** Current rank the character has in this node (0 = not yet taken). */
+  rank: number;
+  state: TalentNodeState;
+  /** Whether the player can spend a point on it right now. */
+  canRankUp: boolean;
+}
+
+/** One known ability, with its current loadout placement. */
+export interface SkillAbilityView {
+  id: string;
+  name: string;
+  description: string;
+  type: "passive" | "active";
+  /** True when this ability occupies an ability slot. */
+  equipped: boolean;
+  /** Slot index (0-based) if equipped, else null. */
+  slotIndex: number | null;
+}
+
+/**
+ * Full snapshot powering the Character/Skills screen. Server-computed and sent
+ * as a SkillScreenMessage whenever the screen is opened or its state changes
+ * (talent spent, ability re-slotted, XP gained). Mirrors QuestBoardView's shape.
+ *
+ * Editable background/notes/quests are intentionally NOT here — those live
+ * client-side (localStorage), as the feature spec dictates.
+ */
+export interface SkillScreenView {
+  characterName: string;
+  characterClass: CharacterClass;
+  level: number;
+  xp: number;
+  /** XP remaining until the next level (0 at max level). */
+  xpToNext: number;
+  unspentSkillPoints: number;
+  unspentAttributePoints: number;
+  /** Ability scores after talent passives + manual allocations. */
+  abilityScores: Record<AbilityScore, number>;
+  /** Fixed-length loadout (length ABILITY_SLOTS); null = empty slot. */
+  abilitySlots: (string | null)[];
+  nodes: SkillTalentNodeView[];
+  knownAbilities: SkillAbilityView[];
+}
+
+/**
+ * Sends the character/skills snapshot. Emitted on open and after every
+ * server-validated mutation so the client never holds stale progression.
+ */
+export interface SkillScreenMessage {
+  type: "skill_screen";
+  payload: SkillScreenView;
 }
 
 // ── Combat messages (Phase 3) ──
@@ -456,6 +515,7 @@ export type ServerMessage =
   | PartyUpdateMessage
   | PartyInviteMessage
   | QuestBoardMessage
+  | SkillScreenMessage
   | NpcInteractionMessage
   | CombatStartMessage
   | CombatPlanningMessage

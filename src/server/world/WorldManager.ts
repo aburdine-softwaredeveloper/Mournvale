@@ -86,6 +86,22 @@ class WorldManager {
     return this.getNpcsInRoom(roomId).filter(n => n.role === "hostile");
   }
 
+  /**
+   * Removes all hostile NPCs from a room — called when they're defeated in
+   * combat, so they stop appearing in the "Here" list and can't re-trigger a
+   * fight. Session-scoped and global (shared world): defeated hostiles return
+   * on server restart. Returns the NPCs that were removed.
+   */
+  clearHostiles(roomId: string): NPC[] {
+    const list = this.byRoom.get(roomId) ?? [];
+    const removed = list.filter(n => n.role === "hostile");
+    if (removed.length === 0) return [];
+
+    this.byRoom.set(roomId, list.filter(n => n.role !== "hostile"));
+    for (const npc of removed) this.byId.delete(npc.id);
+    return removed;
+  }
+
   // ── Interaction views ─────────────────────────────────────────────────────
 
   buildInteractionView(npc: NPC): NpcInteractionView {

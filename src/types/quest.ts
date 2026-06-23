@@ -46,6 +46,13 @@ export interface Quest {
   recommendedSize: number;
   /** True if this quest was procedurally generated (vs authored) */
   generated: boolean;
+  /**
+   * Optional combat objective: defeating all hostiles in this room completes
+   * the quest. The single hook that turns a board quest into a clearable one
+   * (see QuestManager.complete + the combat-end handler). Absent = no combat
+   * objective (board-only flavor or future objective types).
+   */
+  objectiveRoomId?: string;
 }
 
 /**

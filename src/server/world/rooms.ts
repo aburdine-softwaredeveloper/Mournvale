@@ -2,9 +2,10 @@
  * rooms.ts — The Mournvale world map (room definitions)
  *
  * Static world data, moved out of gameState.ts so content lives apart
- * from live session state. Each room has an artKey mapping to a grayscale
- * placeholder scene in /assets/tiles/{artKey}.svg (swap art later without
- * touching this file).
+ * from live session state. Each room has an artKey resolved to
+ * /assets/tiles/{artKey} by the AssetRegistry — currently grayscale SVG
+ * placeholders. To swap a room to raster art, drop in a PNG and add the
+ * extension to its artKey (e.g. "tavern.png"); no other code changes.
  *
  * Layout:
  *                       [chapel]
@@ -34,7 +35,18 @@ export const ROOMS: Record<string, Room> = {
       "Candles flicker on rough-hewn tables. Behind the bar, the keeper " +
       "eyes you with weathered curiosity.",
     artKey: "tavern",
-    exits: { north: "cobblestone_street", west: "stables", east: "guard_post", south: "south_road" },
+    exits: { north: "cobblestone_street", west: "stables", east: "guard_post", south: "south_road", down: "cellar" },
+  },
+
+  cellar: {
+    id: "cellar",
+    name: "The Broken Lantern — Cellar",
+    description:
+      "A low, damp undercroft stacked with ale casks and splintered crates. " +
+      "The air is thick with mildew, and something skitters in the dark " +
+      "between the barrels — too many somethings, by the sound of it.",
+    artKey: "tavern",
+    exits: { up: "tavern" },
   },
 
   cobblestone_street: {

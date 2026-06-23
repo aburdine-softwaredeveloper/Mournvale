@@ -88,6 +88,14 @@ export interface ClassAbility {
   cooldownRounds: number;
   combatOnly: boolean;
   effect: AbilityEffect;
+  /**
+   * Baseline abilities are granted to every character of this class from
+   * level 1 and occupy ability slots by default. Non-baseline abilities are
+   * locked until a talent node unlocks them (see talents.ts), after which the
+   * player may slot them — potentially replacing a baseline. The talent tree
+   * never duplicates these; it references them by id.
+   */
+  baseline?: boolean;
 }
 
 // ─── Stat tables by class ─────────────────────────────────────────────────────
@@ -142,6 +150,16 @@ export const CLASS_DEFAULT_WEAPONS: Record<CharacterClass, Weapon> = {
   Archer:  { id: "longbow",      name: "Longbow",       damageDice: "1d8", range: 6, abilityScore: "dex" },
 };
 
+/**
+ * Per-class ability pools. The first two entries of each class are flagged
+ * `baseline: true` — always granted and slotted from level 1. The remaining
+ * entries are talent-locked (unlocked by `unlock_ability` nodes in talents.ts)
+ * and can be swapped into the character's ability slots once learned.
+ *
+ * Scaling: add a new ability by appending an entry here and pointing a talent
+ * node at its id. Nothing else needs to change — the slot system, the known-
+ * ability list, and combat all read from this single source.
+ */
 export const CLASS_ABILITIES: Record<CharacterClass, ClassAbility[]> = {
   Knight: [
     {
@@ -149,14 +167,35 @@ export const CLASS_ABILITIES: Record<CharacterClass, ClassAbility[]> = {
       description: "Strike with your shield — target must make a STR save or be stunned for one round.",
       type: "active", targetType: "enemy",
       cooldownRounds: 3, combatOnly: true,
-      effect: { damage: "1d4", condition: "stunned" },
+      effect: { damage: "1d4", condition: "stunned" }, baseline: true,
     },
     {
       id: "second_wind", name: "Second Wind",
       description: "Rally yourself and recover 1d10 + level HP.",
       type: "active", targetType: "self",
       cooldownRounds: 5, combatOnly: false,
-      effect: { heal: "1d10+level" },
+      effect: { heal: "1d10+level" }, baseline: true,
+    },
+    {
+      id: "guardian_strike", name: "Guardian Strike",
+      description: "A heavy blow that dares your foe to look away: 1d8 damage and the target is marked, drawing its ire.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 2, combatOnly: true,
+      effect: { damage: "1d8" },
+    },
+    {
+      id: "shield_wall", name: "Shield Wall",
+      description: "Raise your shield and brace — halve all damage you take until your next turn.",
+      type: "active", targetType: "self",
+      cooldownRounds: 3, combatOnly: true,
+      effect: {},
+    },
+    {
+      id: "valiant_charge", name: "Valiant Charge",
+      description: "Surge forward with momentum: 2d6 damage and an immediate second attack.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 4, combatOnly: true,
+      effect: { damage: "2d6", extraAttack: true },
     },
   ],
   Healer: [
@@ -165,14 +204,35 @@ export const CLASS_ABILITIES: Record<CharacterClass, ClassAbility[]> = {
       description: "Restore 1d8 + WIS modifier HP to an ally.",
       type: "active", targetType: "ally",
       cooldownRounds: 3, combatOnly: false,
-      effect: { heal: "1d8+wis" },
+      effect: { heal: "1d8+wis" }, baseline: true,
     },
     {
       id: "sacred_flame", name: "Sacred Flame",
       description: "Radiant energy washes over the target: 1d8 radiant damage on a failed DEX save.",
       type: "active", targetType: "enemy",
       cooldownRounds: 0, combatOnly: true,
-      effect: { damage: "1d8" },
+      effect: { damage: "1d8" }, baseline: true,
+    },
+    {
+      id: "cure_wounds", name: "Cure Wounds",
+      description: "A potent touch restoring 2d8 + WIS HP to an ally.",
+      type: "active", targetType: "ally",
+      cooldownRounds: 4, combatOnly: false,
+      effect: { heal: "2d8+wis" },
+    },
+    {
+      id: "guiding_bolt", name: "Guiding Bolt",
+      description: "A lance of light: 4d6 radiant damage to a single foe.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 3, combatOnly: true,
+      effect: { damage: "4d6" },
+    },
+    {
+      id: "purifying_light", name: "Purifying Light",
+      description: "Wash an ally in warmth — heal 1d8 + WIS and cleanse poison and burning.",
+      type: "active", targetType: "ally",
+      cooldownRounds: 4, combatOnly: false,
+      effect: { heal: "1d8+wis" },
     },
   ],
   Warrior: [
@@ -181,14 +241,35 @@ export const CLASS_ABILITIES: Record<CharacterClass, ClassAbility[]> = {
       description: "Attack with wild abandon — roll twice and take the higher result, but enemies also gain advantage against you until your next turn.",
       type: "active", targetType: "enemy",
       cooldownRounds: 1, combatOnly: true,
-      effect: { extraAttack: true },
+      effect: { extraAttack: true }, baseline: true,
     },
     {
       id: "second_wind", name: "Second Wind",
       description: "Catch your breath and recover 1d10 + level HP.",
       type: "active", targetType: "self",
       cooldownRounds: 5, combatOnly: false,
-      effect: { heal: "1d10+level" },
+      effect: { heal: "1d10+level" }, baseline: true,
+    },
+    {
+      id: "cleave", name: "Cleave",
+      description: "A sweeping strike biting deep for 1d12 damage.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 2, combatOnly: true,
+      effect: { damage: "1d12" },
+    },
+    {
+      id: "battle_cry", name: "Battle Cry",
+      description: "Roar a challenge — steel your nerves and strike with renewed fury (extra attack this turn).",
+      type: "active", targetType: "self",
+      cooldownRounds: 3, combatOnly: true,
+      effect: { extraAttack: true },
+    },
+    {
+      id: "whirlwind", name: "Whirlwind",
+      description: "Spin through the fray, dealing 2d6 to your target and any enemy beside it.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 4, combatOnly: true,
+      effect: { damage: "2d6" },
     },
   ],
   Monk: [
@@ -197,14 +278,35 @@ export const CLASS_ABILITIES: Record<CharacterClass, ClassAbility[]> = {
       description: "Channel your ki — target makes a CON save or is stunned until your next turn.",
       type: "active", targetType: "enemy",
       cooldownRounds: 3, combatOnly: true,
-      effect: { condition: "stunned" },
+      effect: { condition: "stunned" }, baseline: true,
     },
     {
       id: "patient_defense", name: "Patient Defense",
       description: "Assume a defensive stance, halving the next hit you take this round.",
       type: "active", targetType: "self",
       cooldownRounds: 1, combatOnly: true,
+      effect: {}, baseline: true,
+    },
+    {
+      id: "flurry_of_blows", name: "Flurry of Blows",
+      description: "Two rapid strikes flow from your stance — make a second attack this turn.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 2, combatOnly: true,
+      effect: { extraAttack: true },
+    },
+    {
+      id: "step_of_the_wind", name: "Step of the Wind",
+      description: "Flow like air — dash a free extra distance and slip past reach this turn.",
+      type: "active", targetType: "self",
+      cooldownRounds: 2, combatOnly: true,
       effect: {},
+    },
+    {
+      id: "quivering_palm", name: "Quivering Palm",
+      description: "A focused ki strike: 3d6 damage and the target is stunned on a failed save.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 5, combatOnly: true,
+      effect: { damage: "3d6", condition: "stunned" },
     },
   ],
   Mage: [
@@ -213,14 +315,35 @@ export const CLASS_ABILITIES: Record<CharacterClass, ClassAbility[]> = {
       description: "Three darts of pure force, each dealing 1d4+1 damage. Always hits.",
       type: "active", targetType: "enemy",
       cooldownRounds: 3, combatOnly: true,
-      effect: { damage: "1d4+1" },  // applied ×3
+      effect: { damage: "1d4+1" }, baseline: true,  // applied ×3
     },
     {
       id: "fire_bolt", name: "Fire Bolt",
       description: "1d10 fire damage. On hit, the target may begin burning.",
       type: "active", targetType: "enemy",
       cooldownRounds: 0, combatOnly: true,
-      effect: { damage: "1d10", condition: "burning" },
+      effect: { damage: "1d10", condition: "burning" }, baseline: true,
+    },
+    {
+      id: "frost_ray", name: "Frost Ray",
+      description: "A beam of biting cold: 2d8 damage that slows the target.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 2, combatOnly: true,
+      effect: { damage: "2d8" },
+    },
+    {
+      id: "arcane_shield", name: "Arcane Shield",
+      description: "Weave a barrier of force, halving the next hit against you this round.",
+      type: "active", targetType: "self",
+      cooldownRounds: 3, combatOnly: true,
+      effect: {},
+    },
+    {
+      id: "fireball", name: "Fireball",
+      description: "A roaring blast: 6d6 fire damage to the target and everything around it; survivors burn.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 5, combatOnly: true,
+      effect: { damage: "6d6", condition: "burning" },
     },
   ],
   Thief: [
@@ -229,14 +352,35 @@ export const CLASS_ABILITIES: Record<CharacterClass, ClassAbility[]> = {
       description: "+2d6 damage when an ally is adjacent to your target or you have advantage.",
       type: "passive",
       cooldownRounds: 0, combatOnly: false,
-      effect: { damage: "2d6" },
+      effect: { damage: "2d6" }, baseline: true,
     },
     {
       id: "cunning_action", name: "Cunning Action",
       description: "Dash as a free action this turn, doubling your movement range.",
       type: "active",
       cooldownRounds: 1, combatOnly: true,
+      effect: {}, baseline: true,
+    },
+    {
+      id: "poison_blade", name: "Poison Blade",
+      description: "Coat your blade — 1d6 damage and the target is poisoned.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 2, combatOnly: true,
+      effect: { damage: "1d6", condition: "poisoned" },
+    },
+    {
+      id: "vanish", name: "Vanish",
+      description: "Melt into the shadows, halving the next hit against you and setting up your next strike.",
+      type: "active", targetType: "self",
+      cooldownRounds: 3, combatOnly: true,
       effect: {},
+    },
+    {
+      id: "backstab", name: "Backstab",
+      description: "A precise killing thrust for 3d6 damage when you catch a foe unaware.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 4, combatOnly: true,
+      effect: { damage: "3d6" },
     },
   ],
   Archer: [
@@ -245,17 +389,57 @@ export const CLASS_ABILITIES: Record<CharacterClass, ClassAbility[]> = {
       description: "Mark a target — deal +1d6 damage on all attacks against it this combat.",
       type: "active", targetType: "enemy",
       cooldownRounds: 3, combatOnly: false,
-      effect: { damage: "1d6" },
+      effect: { damage: "1d6" }, baseline: true,
     },
     {
       id: "volley", name: "Volley",
       description: "Rain arrows on an area — attack every enemy within 2 tiles of your target.",
       type: "active", targetType: "enemy",
       cooldownRounds: 3, combatOnly: true,
-      effect: { damage: "1d6" },
+      effect: { damage: "1d6" }, baseline: true,
+    },
+    {
+      id: "piercing_shot", name: "Piercing Shot",
+      description: "Draw fully and loose a bodkin: 2d8 damage that ignores cover.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 2, combatOnly: true,
+      effect: { damage: "2d8" },
+    },
+    {
+      id: "evasive_roll", name: "Evasive Roll",
+      description: "Tumble clear — halve the next hit against you and reposition this turn.",
+      type: "active", targetType: "self",
+      cooldownRounds: 3, combatOnly: true,
+      effect: {},
+    },
+    {
+      id: "rapid_fire", name: "Rapid Fire",
+      description: "Loose a second arrow this turn in a blur of motion.",
+      type: "active", targetType: "enemy",
+      cooldownRounds: 4, combatOnly: true,
+      effect: { extraAttack: true },
     },
   ],
 };
+
+// ─── Ability lookup helpers ────────────────────────────────────────────────────
+
+/** Every ability defined for a class, keyed by id, across the whole pool. */
+export function abilityById(
+  charClass: CharacterClass,
+  abilityId: string
+): ClassAbility | undefined {
+  return CLASS_ABILITIES[charClass].find(a => a.id === abilityId);
+}
+
+/**
+ * The ids a class is granted from level 1 — the abilities flagged `baseline`.
+ * These seed a new character's ability slots (see newProgression in
+ * progression.ts) and are always considered "known" regardless of talents.
+ */
+export function baselineAbilityIds(charClass: CharacterClass): string[] {
+  return CLASS_ABILITIES[charClass].filter(a => a.baseline).map(a => a.id);
+}
 
 // ─── CharacterStats ───────────────────────────────────────────────────────────
 

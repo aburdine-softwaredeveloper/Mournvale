@@ -129,6 +129,18 @@ export class QuestManager {
   }
 
   /**
+   * Completes the owner's active quest. Unlike abandon(), the quest is NOT
+   * returned to the board — it's done. Returns the completed ActiveQuest (so
+   * the caller can grant its reward), or null if the owner had no active quest.
+   */
+  public complete(ownerKey: string): ActiveQuest | null {
+    const active = this.activeByOwner.get(ownerKey);
+    if (!active) return null;
+    this.activeByOwner.delete(ownerKey);
+    return active;
+  }
+
+  /**
    * Migrates a solo player's active quest to a party owner key, used when
    * a player who holds a quest joins/forms a party. If both already have
    * quests, the solo one is dropped back to the board to avoid conflict.

@@ -20,6 +20,11 @@ import type {
 import { GRID_COLS, GRID_ROWS } from "../../types/combat";
 import type { CharacterStats, CharacterClass } from "../../types/character";
 import { buildCharacterStats, CLASS_DEFAULT_WEAPONS } from "../../types/character";
+import type { ProgressionState } from "../../types/progression";
+import {
+  applyProgression, equippedAbilityIds, talentBonusHp,
+} from "../../types/progression";
+import { CLASS_TALENT_TREES } from "../../types/talents";
 import {
   rollDie, rollDice, rollAttack, rollInitiative,
   getAbilityModifier, resolveHealingDice, rollBurnDamage,
@@ -168,23 +173,54 @@ export function buildEnemyCombatEntity(params: {
   };
 }
 
-/** Builds a combat entity from a player character. */
+/**
+ * Builds a combat entity from a player character.
+ *
+ * When `progression` is supplied, the character's talent passives and manual
+ * attribute allocations are folded into their stats, their ability list is
+ * narrowed to the abilities they have slotted, and `passive_hp` talents raise
+ * maxHp. Without it, the character falls back to level-1 class defaults with
+ * all baseline abilities (used for tests and any pre-progression caller).
+ */
 export function buildPlayerCombatEntity(params: {
   playerId: string;
   name: string;
   characterClass: CharacterClass;
   hp: number;
   position: GridPosition;
+  progression?: ProgressionState;
 }): CombatEntity {
-  const stats = buildCharacterStats(params.characterClass, 1);
+  let stats = buildCharacterStats(params.characterClass, params.progression?.level ?? 1);
+  let maxHp = params.hp;
+
+  if (params.progression) {
+    const tree = CLASS_TALENT_TREES[params.characterClass];
+    stats = applyProgression(stats, params.progression, tree);
+
+    // Only slotted abilities are usable in combat.
+    const equipped = new Set(equippedAbilityIds(params.progression));
+    const classAbilities = stats.classAbilities.filter(a => equipped.has(a.id));
+    stats = {
+      ...stats,
+      classAbilities,
+      abilityUses: Object.fromEntries(
+        classAbilities
+          .filter(a => a.type === "active" && a.cooldownRounds > 0)
+          .map(a => [a.id, 1])
+      ),
+    };
+
+    maxHp = params.hp + talentBonusHp(params.progression, tree);
+  }
+
   return {
     id:          `player-${params.playerId}`,
     name:        params.name,
     type:        "player",
     playerId:    params.playerId,
     position:    params.position,
-    hp:          params.hp,
-    maxHp:       params.hp,
+    hp:          maxHp,
+    maxHp,
     stats,
     initiative:  0,
     conditions:  [],

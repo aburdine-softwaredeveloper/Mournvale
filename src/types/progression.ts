@@ -17,6 +17,7 @@
  */
 
 import type { AbilityScore, CharacterClass, CharacterStats } from "./character";
+import { baselineAbilityIds } from "./character";
 
 // ─── Leveling curve ───────────────────────────────────────────────────────────
 
@@ -30,6 +31,14 @@ export const SKILL_POINTS_PER_LEVEL = 1;
 export const ATTRIBUTE_POINT_LEVELS = new Set([4, 8, 12, 16, 19]);
 
 export const MAX_LEVEL = 20;
+
+/**
+ * Number of ability slots every character has. Baseline class abilities fill
+ * the first slots at creation; talent-unlocked abilities can be swapped into any
+ * slot afterward (see equipAbility). Bump this to give every class more loadout
+ * room — nothing else needs to change.
+ */
+export const ABILITY_SLOTS = 4;
 
 /**
  * Total cumulative XP required to BE a given level.
@@ -115,21 +124,45 @@ export interface ProgressionState {
   level: number;
   unspentSkillPoints: number;
   unspentAttributePoints: number;
+  /**
+   * Total skill points spent on talent ranks over the character's lifetime,
+   * cost-weighted (a rank-2 capstone that costs 2 adds 2). Tracked explicitly
+   * so awardXp can recompute unspent points correctly without needing the tree.
+   */
+  spentSkillPoints: number;
   /** nodeId → current rank. Absent key = rank 0. */
   talentRanks: Record<string, number>;
   /** Manual attribute-point allocations, on top of class base scores. */
   attributeAllocations: Record<AbilityScore, number>;
+  /**
+   * The character's ability loadout: a fixed-length array (ABILITY_SLOTS) of
+   * ability ids, with null for empty slots. Only ids the player has "known"
+   * (baseline or talent-unlocked) may occupy a slot; combat reads from here.
+   */
+  equippedAbilityIds: (string | null)[];
 }
 
-/** A fresh level-1 progression for a newly finalized character. */
-export function newProgression(): ProgressionState {
+/**
+ * A fresh level-1 progression for a newly finalized character. Seeds the
+ * ability slots with the class's baseline abilities; remaining slots start
+ * empty and are filled as the player unlocks talents.
+ */
+export function newProgression(charClass: CharacterClass): ProgressionState {
+  const baselines = baselineAbilityIds(charClass);
+  const equippedAbilityIds: (string | null)[] = Array.from(
+    { length: ABILITY_SLOTS },
+    (_, i) => baselines[i] ?? null
+  );
+
   return {
     xp: 0,
     level: 1,
     unspentSkillPoints: 0,
     unspentAttributePoints: 0,
+    spentSkillPoints: 0,
     talentRanks: {},
     attributeAllocations: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+    equippedAbilityIds,
   };
 }
 
@@ -142,17 +175,13 @@ export function awardXp(prev: ProgressionState, amount: number): ProgressionStat
   const xp = Math.max(0, prev.xp + amount);
   const level = levelForXp(xp);
 
-  const spentSkill = Object.entries(prev.talentRanks).reduce(
-    (sum, [, rank]) => sum + rank, // cost-weighting applied in spendTalentPoint; ranks tracked here
-    0
-  );
   const spentAttr = Object.values(prev.attributeAllocations).reduce((a, b) => a + b, 0);
 
   return {
     ...prev,
     xp,
     level,
-    unspentSkillPoints: Math.max(0, lifetimeSkillPoints(level) - spentSkill),
+    unspentSkillPoints: Math.max(0, lifetimeSkillPoints(level) - prev.spentSkillPoints),
     unspentAttributePoints: Math.max(0, lifetimeAttributePoints(level) - spentAttr),
   };
 }
@@ -195,19 +224,49 @@ export function spendTalentPoint(prog: ProgressionState, node: TalentNode): Prog
   return {
     ...prog,
     unspentSkillPoints: prog.unspentSkillPoints - node.cost,
+    spentSkillPoints: prog.spentSkillPoints + node.cost,
     talentRanks: { ...prog.talentRanks, [node.id]: nodeRank(prog, node.id) + 1 },
+  };
+}
+
+// ─── Attribute points (pure, mirrors spendTalentPoint) ─────────────────────────
+
+/** Whether the player has an unspent attribute point to allocate. */
+export function canRaiseAttribute(prog: ProgressionState): boolean {
+  return prog.unspentAttributePoints > 0;
+}
+
+/**
+ * Spend one attribute point to raise an ability score by 1 (recorded as an
+ * allocation on top of the class base). Returns the SAME state by reference if
+ * there's no point to spend, matching spendTalentPoint so callers can detect
+ * rejection. The lifetime budget (ATTRIBUTE_POINT_LEVELS) naturally caps total
+ * allocations, so no per-stat cap is enforced here.
+ */
+export function spendAttributePoint(
+  prog: ProgressionState,
+  stat: AbilityScore
+): ProgressionState {
+  if (!canRaiseAttribute(prog)) return prog;
+  return {
+    ...prog,
+    unspentAttributePoints: prog.unspentAttributePoints - 1,
+    attributeAllocations: {
+      ...prog.attributeAllocations,
+      [stat]: prog.attributeAllocations[stat] + 1,
+    },
   };
 }
 
 // ─── Projecting progression onto CharacterStats ────────────────────────────────
 
 /**
- * The set of ability ids the character has actually learned: every ability that
- * a tree node has unlocked (or ranked) for them. Drives the right-hand ability
- * list and gates which CLASS_ABILITIES are usable in combat.
+ * The set of ability ids the character has learned and may slot: the class's
+ * baseline abilities (always known) plus every ability a ranked tree node has
+ * unlocked. Drives the ability list and gates which CLASS_ABILITIES are slottable.
  */
 export function knownAbilityIds(prog: ProgressionState, tree: TalentTree): Set<string> {
-  const known = new Set<string>();
+  const known = new Set<string>(baselineAbilityIds(tree.class));
   for (const node of tree.nodes) {
     if (nodeRank(prog, node.id) < 1) continue;
     if (node.reward.kind === "unlock_ability" || node.reward.kind === "rank_ability") {
@@ -258,4 +317,72 @@ export function applyProgression(
   }
 
   return { ...stats, abilityScores, level: prog.level };
+}
+
+/**
+ * Total flat HP granted by ranked `passive_hp` talent nodes. CharacterStats has
+ * no HP field (HP lives on the combat entity), so this is surfaced separately
+ * and added to maxHp when a combat entity is built.
+ */
+export function talentBonusHp(prog: ProgressionState, tree: TalentTree): number {
+  let bonus = 0;
+  for (const node of tree.nodes) {
+    const rank = nodeRank(prog, node.id);
+    if (rank < 1) continue;
+    if (node.reward.kind === "passive_hp") bonus += node.reward.perRank * rank;
+  }
+  return bonus;
+}
+
+// ─── Ability slots / loadout (pure) ────────────────────────────────────────────
+
+/**
+ * The known abilities currently slotted, in slot order, skipping empty slots.
+ * This is the set combat should treat as usable.
+ */
+export function equippedAbilityIds(prog: ProgressionState): string[] {
+  return prog.equippedAbilityIds.filter((id): id is string => id !== null);
+}
+
+/**
+ * Whether `abilityId` may be placed in `slotIndex` right now: the slot must be
+ * in range and the ability must be known. Equipping an already-slotted ability
+ * is allowed (it moves) — see equipAbility.
+ */
+export function canEquipAbility(
+  prog: ProgressionState,
+  tree: TalentTree,
+  abilityId: string,
+  slotIndex: number
+): boolean {
+  if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= ABILITY_SLOTS) return false;
+  return knownAbilityIds(prog, tree).has(abilityId);
+}
+
+/**
+ * Slot a known ability into `slotIndex`. If the ability already occupies another
+ * slot, that slot is cleared first so an ability is never slotted twice. Returns
+ * the SAME state (by reference) if the move is illegal, matching spendTalentPoint.
+ */
+export function equipAbility(
+  prog: ProgressionState,
+  tree: TalentTree,
+  abilityId: string,
+  slotIndex: number
+): ProgressionState {
+  if (!canEquipAbility(prog, tree, abilityId, slotIndex)) return prog;
+
+  const slots = prog.equippedAbilityIds.map((id) => (id === abilityId ? null : id));
+  slots[slotIndex] = abilityId;
+  return { ...prog, equippedAbilityIds: slots };
+}
+
+/** Clear a slot. Returns the same state if the index is out of range. */
+export function unequipSlot(prog: ProgressionState, slotIndex: number): ProgressionState {
+  if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= ABILITY_SLOTS) return prog;
+  if (prog.equippedAbilityIds[slotIndex] === null) return prog;
+
+  const slots = [...prog.equippedAbilityIds];
+  slots[slotIndex] = null;
+  return { ...prog, equippedAbilityIds: slots };
 }

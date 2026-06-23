@@ -19,14 +19,17 @@
  * All outgoing commands flow through the onCommand callback.
  */
 
-import { CommandMenu, DEFAULT_COMMANDS } from "../components/CommandMenu";
+import { CommandMenu, DEFAULT_COMMANDS, VERTICAL_COMMANDS, type CommandDefinition } from "../components/CommandMenu";
 import { PartyPanel } from "../components/PartyPanel";
+import { CharacterPanel } from "../components/CharacterPanel";
+import { TalentTreePanel } from "../components/TalentTreePanel";
+import { AbilityListPanel } from "../components/AbilityListPanel";
 import { assetRegistry } from "../../engine/assets/AssetRegistry";
 import {
   portraitCompositor,
   type PortraitSpec,
 } from "../../engine/assets/PortraitCompositor";
-import type { RoomMessage } from "../../types/network";
+import type { RoomMessage, SkillScreenView } from "../../types/network";
 import type { PartyView } from "../../types/party";
 import type { NpcView, NpcRole, TalkIntent } from "../../types/npc";
 
@@ -74,6 +77,16 @@ export class GameScreen {
   private readonly partyPanel: PartyPanel;
   private onCommand: ((input: string) => void) | null = null;
 
+  // Character/skills screen — repurposes the three panels in place
+  private readonly characterPanel: CharacterPanel;
+  private readonly talentTreePanel: TalentTreePanel;
+  private readonly abilityListPanel: AbilityListPanel;
+  /** The three panel elements toggled into "skills" mode together. */
+  private readonly skillPanels: HTMLElement[];
+  private skillScreenOpen = false;
+  /** Cached portrait spec, reused for the talent panel preview. */
+  private portraitSpec: PortraitSpec | null = null;
+
   /** Tracks the last room art key so we don't re-fetch on every update */
   private currentArtKey: string | null = null;
 
@@ -101,6 +114,21 @@ export class GameScreen {
     this.commandMenu = new CommandMenu("command-buttons");
     this.partyPanel  = new PartyPanel();
 
+    // Character/skills panels (hidden until openSkillScreen)
+    this.characterPanel   = new CharacterPanel("character-panel");
+    this.talentTreePanel  = new TalentTreePanel("talent-panel");
+    this.abilityListPanel = new AbilityListPanel("ability-panel");
+    this.skillPanels = [
+      this.requireEl("details-panel"),
+      this.requireEl("room-image-panel"),
+      this.requireEl("log-panel"),
+    ];
+
+    this.characterPanel.setCloseHandler(() => this.closeSkillScreen());
+    this.characterPanel.setCommandHandler((cmd) => this.send(cmd));
+    this.talentTreePanel.setCommandHandler((cmd) => this.send(cmd));
+    this.abilityListPanel.setCommandHandler((cmd) => this.send(cmd));
+
     this.wireInput();
   }
 
@@ -116,6 +144,39 @@ export class GameScreen {
     this.partyPanel.update(party);
   }
 
+  // ─────────────────────────────────────────────
+  // CHARACTER / SKILLS SCREEN
+  // ─────────────────────────────────────────────
+
+  /**
+   * Opens (or refreshes) the character/skills screen by swapping the three
+   * panels into "skills" mode and rendering them from the server view. Safe to
+   * call repeatedly: the server re-emits the view after every mutation, and
+   * each call just re-renders while the screen stays open. The underlying room
+   * and party DOM is only hidden (via CSS), so closing restores it as-is —
+   * no caching or re-render of room state needed.
+   */
+  public openSkillScreen(view: SkillScreenView): void {
+    this.characterPanel.update(view);
+    this.talentTreePanel.update(view);
+    this.abilityListPanel.update(view);
+
+    if (!this.skillScreenOpen) {
+      for (const panel of this.skillPanels) panel.classList.add("skills-active");
+      this.skillScreenOpen = true;
+    }
+  }
+
+  public closeSkillScreen(): void {
+    if (!this.skillScreenOpen) return;
+    for (const panel of this.skillPanels) panel.classList.remove("skills-active");
+    this.skillScreenOpen = false;
+  }
+
+  public isSkillScreenOpen(): boolean {
+    return this.skillScreenOpen;
+  }
+
   public init(
     playerName: string,
     playerClass: string,
@@ -125,6 +186,8 @@ export class GameScreen {
     this.onCommand = onCommand;
     this.headerName.textContent  = playerName;
     this.headerClass.textContent = playerClass.toUpperCase();
+    this.portraitSpec = portraitSpec;
+    this.talentTreePanel.setPortraitSpec(portraitSpec);
 
     if (portraitSpec) {
       this.headerPortrait.innerHTML = portraitCompositor.compose(portraitSpec);
@@ -148,9 +211,22 @@ export class GameScreen {
     this.roomDesc.textContent  = description;
     this.roomExits.textContent = exits.length > 0 ? exits.join(", ") : "none";
 
+    this.updateVerticalCommands(exits);
     this.expandedNpcId = null;
     this.renderNpcs(npcs);
     this.updateRoomImage(artKey);
+  }
+
+  /**
+   * Shows Up/Down buttons only when the current room has that vertical exit.
+   * Horizontal movement stays always-on (the N/S/E/W buttons), matching the
+   * existing UX; only vertical movement is gated on availability.
+   */
+  private updateVerticalCommands(exits: string[]): void {
+    const contextual: CommandDefinition[] = [];
+    if (exits.includes("up"))   contextual.push(VERTICAL_COMMANDS.up);
+    if (exits.includes("down")) contextual.push(VERTICAL_COMMANDS.down);
+    this.commandMenu.setContextual(contextual);
   }
 
   public log(text: string, kind: LogKind = "default"): void {
@@ -297,18 +373,25 @@ export class GameScreen {
       return;
     }
 
-    const key    = `tiles/${artKey}` as const;
-    const cached = assetRegistry.get(key);
+    const key = `tiles/${artKey}` as const;
 
+    // Raster art (PNG/JPG/…) loads lazily via <img src>; no text fetch.
+    if (assetRegistry.isRaster(key)) {
+      this.setRoomImagePng(artKey, assetRegistry.resolveUrl(key));
+      return;
+    }
+
+    // SVG art is fetched as text and injected inline (themeable).
+    const cached = assetRegistry.get(key);
     if (cached) {
-      this.setRoomImageContent(artKey, cached);
+      this.roomImage.innerHTML = cached;
       return;
     }
 
     void assetRegistry
       .load(key)
       .then((content) => {
-        if (this.currentArtKey === artKey) this.setRoomImageContent(artKey, content);
+        if (this.currentArtKey === artKey) this.roomImage.innerHTML = content;
       })
       .catch(() => {
         if (this.currentArtKey === artKey) {
@@ -317,21 +400,19 @@ export class GameScreen {
       });
   }
 
-  /**
-   * PNG assets (project standard) render as <img>.
-   * Legacy SVG content is injected directly.
-   */
-  private setRoomImageContent(artKey: string, content: string): void {
-    if (artKey.endsWith(".png")) {
-      const img     = document.createElement("img");
-      img.src       = content;
-      img.alt       = artKey;
-      img.className = "room-image-png";
-      this.roomImage.innerHTML = "";
-      this.roomImage.appendChild(img);
-    } else {
-      this.roomImage.innerHTML = content;
-    }
+  /** Renders a raster room image as an <img>, replacing any prior content. */
+  private setRoomImagePng(artKey: string, url: string): void {
+    const img     = document.createElement("img");
+    img.src       = url;
+    img.alt       = artKey;
+    img.className = "room-image-png";
+    img.onerror   = () => {
+      if (this.currentArtKey === artKey) {
+        this.roomImage.innerHTML = '<div class="room-image-empty">— no view —</div>';
+      }
+    };
+    this.roomImage.innerHTML = "";
+    this.roomImage.appendChild(img);
   }
 
   // ─────────────────────────────────────────────

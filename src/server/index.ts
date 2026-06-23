@@ -22,7 +22,7 @@ import { WebSocketServer, WebSocket, RawData } from "ws";
 import { randomUUID } from "crypto";
 import { handleCommand } from "./commands";
 import { broadcastToRoom, sendToPlayer } from "./roomUtils";
-import { players, rooms, getDisplayName, getActivePlayersInRoom, getPlayerById } from "./gameState";
+import { players, rooms, getDisplayName, getActivePlayersInRoom, getPlayerById, getPlayerByPlayerId } from "./gameState";
 import {
   getDialogueForStep,
   getNextStep,
@@ -44,6 +44,13 @@ import type {
 import type { TalkIntent } from "../types/npc";
 import type { Player } from "../types/game";
 import type { CharacterClass } from "../types/character";
+import {
+  newProgression, awardXp, levelForXp,
+  spendTalentPoint, spendAttributePoint, equipAbility, unequipSlot, ABILITY_SLOTS,
+} from "../types/progression";
+import { CLASS_TALENT_TREES } from "../types/talents";
+import { ABILITY_SCORE_NAMES, type AbilityScore } from "../types/character";
+import { buildSkillScreenView } from "./character/skillScreen";
 
 
 // ─────────────────────────────────────────────
@@ -153,7 +160,7 @@ server.on("connection", (socket: WebSocket) => {
       currentPlayer.playerId &&
       currentPlayer.activeSlot
     ) {
-      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId);
+      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId, currentPlayer.progression);
       const { playerId, activeSlot } = currentPlayer;
       saveStore
         .save(playerId, activeSlot, data)
@@ -249,10 +256,13 @@ async function handleMenuMessage(
         await sendSlotList(player, socket);
         return;
       }
-      player.activeSlot = slot;
-      player.character  = data.character;
-      player.roomId     = rooms[data.roomId] ? data.roomId : "tavern";
-      player.state      = "active";
+      player.activeSlot  = slot;
+      player.character   = data.character;
+      // load() migrates v1 saves, so progression is always present; fall back
+      // defensively just in case.
+      player.progression = data.progression ?? newProgression(data.character.characterClass);
+      player.roomId      = rooms[data.roomId] ? data.roomId : "tavern";
+      player.state       = "active";
 
       sendToPlayer(socket, {
         type: "character_confirmed",
@@ -344,6 +354,7 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
     try {
       const character  = finalizeDraft(player.draft);
       player.character = character;
+      player.progression = newProgression(character.characterClass);
       player.state     = "active";
       player.roomId    = "tavern";
 
@@ -372,7 +383,7 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
       });
 
       if (player.playerId && player.activeSlot) {
-        const data = buildSaveData(character, player.roomId);
+        const data = buildSaveData(character, player.roomId, player.progression);
         const { playerId, activeSlot } = player;
         saveStore
           .save(playerId, activeSlot, data)
@@ -396,9 +407,16 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
 function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessage): void {
   switch (msg.type) {
     case "command": {
+      // Character/skills screen commands need the Player + socket to emit a
+      // typed SkillScreenMessage, which the string-returning handleCommand
+      // can't do — intercept them here before falling through.
+      if (handleSkillCommand(player, socket, msg.payload.input)) return;
+      // `fight` starts combat in the player's room — also needs the Player.
+      if (handleFightCommand(player, socket, msg.payload.input)) return;
+
       const response = handleCommand(player.id, msg.payload.input);
       if (response) sendToPlayer(socket, { type: "system", payload: { message: response } });
-      if (["north", "south", "east", "west"].includes(
+      if (["north", "south", "east", "west", "up", "down"].includes(
         msg.payload.input.trim().split(" ")[0]?.toLowerCase() ?? ""
       )) {
         sendRoomUpdate(player, socket);
@@ -507,23 +525,49 @@ function handleTalk(
 // ─────────────────────────────────────────────
 
 /**
+ * Handles the `fight` command (from the ⚔ Fight button or typed). Starts
+ * combat in the player's current room if it holds hostiles. The target name is
+ * ignored — combat engages every hostile in the room. Returns true if the input
+ * was a fight command (handled), so the caller skips the normal pipeline.
+ */
+function handleFightCommand(player: Player, socket: WebSocket, input: string): boolean {
+  if (input.trim().split(/\s+/)[0]?.toLowerCase() !== "fight") return false;
+
+  if (!player.roomId) {
+    sendToPlayer(socket, { type: "system", payload: { message: "You are nowhere to fight." } });
+    return true;
+  }
+  if (worldManager.getHostileNpcsInRoom(player.roomId).length === 0) {
+    sendToPlayer(socket, { type: "system", payload: { message: "There's nothing here to fight." } });
+    return true;
+  }
+
+  triggerCombat(player.roomId);
+  return true;
+}
+
+/**
  * Call this when players enter a room containing hostile NPCs.
  * Places all players in the room and the hostile NPCs on the grid,
  * then sends a personalised combat_start to every player.
  */
 export function triggerCombat(roomId: string): void {
-  const playersInRoom = getActivePlayersInRoom(roomId);
+  // Only players with a persistent identity can take part — combat entities,
+  // socket delivery (emitToPlayer), and the client's "my entity" check all key
+  // off Player.playerId, so it must be the id stamped on each entity.
+  const playersInRoom = getActivePlayersInRoom(roomId).filter((p) => p.playerId);
   const hostileNpcs   = worldManager.getHostileNpcsInRoom(roomId);
   if (!playersInRoom.length || !hostileNpcs.length) return;
 
   // Place players along the bottom rows, enemies along the top rows
   const playerEntities = playersInRoom.map((p, i) =>
     buildPlayerCombatEntity({
-      playerId:       p.id,
+      playerId:       p.playerId!,
       name:           p.character?.name ?? "Adventurer",
       characterClass: (p.character?.characterClass ?? "Warrior") as CharacterClass,
       hp:             30,
       position:       { x: i % 8, y: 7 - Math.floor(i / 8) },
+      ...(p.progression && { progression: p.progression }),
     })
   );
 
@@ -605,12 +649,39 @@ function handleCombatSubmitAction(
     const xpReward   = enemyCount * 50;
     const goldReward = Math.floor(Math.random() * 15) + 5;
 
+    // Award XP only on a win, and only to players who are still standing.
+    const survivors = new Set(
+      state.entities
+        .filter(e => e.type === "player" && !e.isDead && e.playerId)
+        .map(e => e.playerId!)
+    );
+
+    // On a win, the defeated hostiles leave the room for good (this session).
+    if (outcome === "players_win") {
+      worldManager.clearHostiles(state.roomId);
+    }
+
     for (const pid of playersInCombat) {
       emitToPlayer(pid, {
         type: "combat_end",
         payload: { combatId, outcome: outcome!, xpReward, goldReward },
       });
+
+      if (outcome === "players_win" && survivors.has(pid)) {
+        awardCombatXp(pid, xpReward);
+        const winner = getPlayerByPlayerId(pid);
+        if (winner) maybeCompleteRoomQuest(winner, state.roomId);
+      }
     }
+
+    // Refresh the room for everyone present so cleared hostiles disappear
+    // from the "Here" list once the combat overlay closes.
+    if (outcome === "players_win") {
+      for (const p of getActivePlayersInRoom(state.roomId)) {
+        sendRoomUpdate(p, p.socket);
+      }
+    }
+
     combatManager.endCombat(combatId);
     return;
   }
@@ -630,6 +701,223 @@ function handleCombatSubmitAction(
       payload: { combatId, round: nextState.round, state: view, pendingPlayerIds: nextPending },
     });
   }
+}
+
+/**
+ * Awards combat XP to one player's persisted progression and notifies them.
+ *
+ * `playerId` is the combat entity's playerId — the player's persistent identity
+ * (see triggerCombat) — so we resolve via getPlayerByPlayerId. Folds the XP in
+ * with awardXp (which reconciles level + unspent points), reports any level-up,
+ * and persists the updated progression to the active slot.
+ */
+function awardCombatXp(playerId: string, xp: number): void {
+  const player = getPlayerByPlayerId(playerId);
+  if (!player || !player.progression) return;
+
+  const before = player.progression.level;
+  player.progression = awardXp(player.progression, xp);
+  const after = player.progression.level;
+
+  sendToPlayer(player.socket, {
+    type: "system",
+    payload: { message: `You gained ${xp} XP.` },
+  });
+
+  if (after > before) {
+    sendToPlayer(player.socket, {
+      type: "system",
+      payload: {
+        message:
+          `You reached level ${after}! ` +
+          `You have ${player.progression.unspentSkillPoints} skill point(s)` +
+          (player.progression.unspentAttributePoints > 0
+            ? ` and ${player.progression.unspentAttributePoints} attribute point(s)`
+            : "") +
+          ` to spend. (Open your character screen.)`,
+      },
+    });
+    // Sanity: levelForXp agrees with the reconciled level.
+    console.log(
+      `[xp] ${player.character?.name} → L${after} (xp ${player.progression.xp}, ` +
+      `levelForXp=${levelForXp(player.progression.xp)})`
+    );
+  }
+
+  // Persist immediately so progress survives a crash before disconnect.
+  saveProgress(player);
+}
+
+/**
+ * Completes the player's active quest if its objective was clearing hostiles in
+ * `roomId` (see Quest.objectiveRoomId). Grants the reward XP through awardXp
+ * (folding into level/points), reports gold as flavor (no gold ledger yet),
+ * persists, and refreshes the quest board. No-op when the active quest — if any
+ * — has a different (or no) room objective.
+ */
+function maybeCompleteRoomQuest(player: Player, roomId: string): void {
+  const ownerKey = questOwnerKey(player);
+  const active = questManager.getActive(ownerKey);
+  if (!active || active.quest.objectiveRoomId !== roomId) return;
+
+  questManager.complete(ownerKey);
+  const reward = active.quest.reward;
+
+  if (player.progression) {
+    player.progression = awardXp(player.progression, reward.xp);
+    saveProgress(player);
+  }
+
+  sendToPlayer(player.socket, {
+    type: "system",
+    payload: {
+      message:
+        `Quest complete — ${active.quest.title}! ` +
+        `Reward: ${reward.gold} gold, ${reward.xp} XP` +
+        (reward.item ? `, ${reward.item}` : "") + ".",
+    },
+  });
+  sendQuestBoard(player, player.socket);
+}
+
+/**
+ * Persists a player's current character + progression to their active slot,
+ * if they have one. Fire-and-forget; logs on failure. Shared by the XP award
+ * and the skills-screen mutations so saves stay consistent.
+ */
+function saveProgress(player: Player): void {
+  if (!player.playerId || !player.activeSlot || !player.character || !player.roomId) return;
+  const data = buildSaveData(player.character, player.roomId, player.progression);
+  const { playerId, activeSlot } = player;
+  saveStore
+    .save(playerId, activeSlot, data)
+    .catch((err) => console.error(`[save] Progression save failed for ${playerId}:`, err));
+}
+
+// ─────────────────────────────────────────────
+// CHARACTER / SKILLS SCREEN
+// ─────────────────────────────────────────────
+
+/** Emits the current character/skills snapshot to one player. */
+function sendSkillScreen(player: Player, socket: WebSocket): void {
+  if (!player.character || !player.progression) return;
+  sendToPlayer(socket, {
+    type: "skill_screen",
+    payload: buildSkillScreenView(player.character, player.progression),
+  });
+}
+
+/**
+ * Intercepts the character-screen commands (open, spend a talent, re-slot an
+ * ability). Returns true if the input was one of them and was handled, so the
+ * caller skips the normal command pipeline.
+ *
+ * Commands:
+ *   skills | character           — open the screen (emit the view)
+ *   spend [talent] <nodeId>      — rank up a talent node
+ *   equip <abilityId> <slot>     — slot a known ability (slot is 1-based)
+ *   unequip <slot>               — clear a slot (1-based)
+ *
+ * Every mutation is validated by the pure progression helpers (which return the
+ * same state by reference on rejection), then the updated view is re-emitted and
+ * the save is written.
+ */
+function handleSkillCommand(player: Player, socket: WebSocket, input: string): boolean {
+  const parts = input.trim().split(/\s+/);
+  const cmd = parts[0]?.toLowerCase();
+
+  if (cmd !== "skills" && cmd !== "character" && cmd !== "spend" &&
+      cmd !== "equip" && cmd !== "unequip") {
+    return false;
+  }
+
+  if (!player.character || !player.progression) {
+    sendToPlayer(socket, { type: "system", payload: { message: "No character loaded." } });
+    return true;
+  }
+
+  const tree = CLASS_TALENT_TREES[player.character.characterClass];
+
+  switch (cmd) {
+    case "skills":
+    case "character":
+      sendSkillScreen(player, socket);
+      return true;
+
+    case "spend": {
+      // Attribute points: "spend attr <stat>".
+      if (parts[1]?.toLowerCase() === "attr") {
+        const stat = parts[2]?.toLowerCase() as AbilityScore | undefined;
+        if (!stat || !ABILITY_SCORE_NAMES.includes(stat)) {
+          sendToPlayer(socket, { type: "system", payload: { message: `Usage: spend attr <${ABILITY_SCORE_NAMES.join("|")}>` } });
+          return true;
+        }
+        const next = spendAttributePoint(player.progression, stat);
+        if (next === player.progression) {
+          sendToPlayer(socket, { type: "system", payload: { message: "You have no attribute points to spend." } });
+          return true;
+        }
+        player.progression = next;
+        saveProgress(player);
+        sendSkillScreen(player, socket);
+        return true;
+      }
+
+      // Talents: "spend <nodeId>" or "spend talent <nodeId>".
+      const nodeId = parts[1]?.toLowerCase() === "talent" ? parts[2] : parts[1];
+      const node = nodeId ? tree.nodes.find((n) => n.id === nodeId) : undefined;
+      if (!node) {
+        sendToPlayer(socket, { type: "system", payload: { message: `Unknown talent: "${nodeId ?? ""}".` } });
+        return true;
+      }
+      const next = spendTalentPoint(player.progression, node);
+      if (next === player.progression) {
+        sendToPlayer(socket, { type: "system", payload: { message: `You can't rank up ${node.name} right now.` } });
+        return true;
+      }
+      player.progression = next;
+      saveProgress(player);
+      sendSkillScreen(player, socket);
+      return true;
+    }
+
+    case "equip": {
+      const abilityId = parts[1];
+      const slot = Number(parts[2]) - 1; // player-facing slots are 1-based
+      if (!abilityId || !Number.isInteger(slot) || slot < 0 || slot >= ABILITY_SLOTS) {
+        sendToPlayer(socket, { type: "system", payload: { message: `Usage: equip <abilityId> <slot 1–${ABILITY_SLOTS}>` } });
+        return true;
+      }
+      const next = equipAbility(player.progression, tree, abilityId, slot);
+      if (next === player.progression) {
+        sendToPlayer(socket, { type: "system", payload: { message: `Can't equip "${abilityId}" — not learned, or invalid slot.` } });
+        return true;
+      }
+      player.progression = next;
+      saveProgress(player);
+      sendSkillScreen(player, socket);
+      return true;
+    }
+
+    case "unequip": {
+      const slot = Number(parts[1]) - 1;
+      if (!Number.isInteger(slot) || slot < 0 || slot >= ABILITY_SLOTS) {
+        sendToPlayer(socket, { type: "system", payload: { message: `Usage: unequip <slot 1–${ABILITY_SLOTS}>` } });
+        return true;
+      }
+      const next = unequipSlot(player.progression, slot);
+      if (next === player.progression) {
+        sendToPlayer(socket, { type: "system", payload: { message: "That slot is already empty." } });
+        return true;
+      }
+      player.progression = next;
+      saveProgress(player);
+      sendSkillScreen(player, socket);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // ─────────────────────────────────────────────

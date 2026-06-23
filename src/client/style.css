@@ -538,10 +538,12 @@ html, body {
   justify-content: center;
 }
 
-.room-image svg {
+.room-image svg,
+.room-image-png {
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: contain;
   image-rendering: pixelated;
 }
 
@@ -659,6 +661,12 @@ html, body {
 .cmd-btn:active {
   background: var(--color-selection);
   color: var(--color-cursor);
+}
+
+/* Contextual commands (e.g. Up/Down) — gold-tinted to read as situational. */
+.cmd-btn-contextual {
+  border-color: var(--color-border-gold);
+  color: var(--color-text-gold);
 }
 
 /* â”€â”€ Input Panel â”€â”€ */
@@ -1127,4 +1135,259 @@ html, body {
 .party-status-tag.status-buff {
   color: var(--color-text-system);
   border-color: var(--color-text-system);
+}
+
+/* ═══════════════════════════════════════════════
+   CHARACTER / SKILLS SCREEN
+   Repurposes the three game panels in place.
+═══════════════════════════════════════════════ */
+
+/* Toggle: when a panel is in skills mode, hide its normal children and
+   reveal the single .skill-mode container. */
+.skill-mode { display: none; }
+.snes-panel.skills-active > :not(.skill-mode) { display: none; }
+.snes-panel.skills-active > .skill-mode {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) var(--color-bg-panel);
+  gap: 6px;
+}
+
+/* ── Header with close button (left panel) ── */
+.skill-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.skill-close-btn {
+  padding: 2px 8px;
+  font-size: 0.7em;
+  line-height: 1;
+}
+
+/* ── Character panel ── */
+.char-identity {
+  color: var(--color-text-gold);
+  font-size: 0.72em;
+  line-height: 1.4;
+}
+.char-xp { margin-top: 2px; }
+.char-xp-bar {
+  height: 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+.char-xp-fill {
+  height: 100%;
+  background: var(--color-border-light);
+  transition: width 120ms linear;
+}
+.char-xp-label {
+  font-size: 0.6em;
+  color: var(--color-text-dim);
+  margin-top: 3px;
+}
+.char-points {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.char-point-chip {
+  font-size: 0.6em;
+  color: var(--color-text);
+  background: var(--color-bg-panel-alt);
+  border: 1px solid var(--color-border);
+  padding: 3px 6px;
+}
+.char-point-chip b { color: var(--color-text-gold); }
+
+.char-scores {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.char-score-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 2px;
+  background: var(--color-bg-panel-alt);
+  border: 1px solid var(--color-border);
+}
+.char-score-name { font-size: 0.55em; color: var(--color-text-dim); }
+.char-score-val  { font-size: 0.85em; color: var(--color-text-gold); }
+.char-score-mod  { font-size: 0.6em; color: var(--color-text); }
+.char-score-raise {
+  margin-top: 2px;
+  padding: 1px 6px;
+  font-family: var(--font-pixel);
+  font-size: 0.7em;
+  line-height: 1;
+  background: var(--color-btn-bg);
+  border: 1px solid var(--color-border-light);
+  color: var(--color-text-gold);
+  cursor: pointer;
+}
+.char-score-raise:hover { background: var(--color-btn-hover-bg); }
+
+.char-background {
+  flex: 1;
+  min-height: 80px;
+  resize: vertical;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  font-family: var(--font-pixel);
+  font-size: 0.62em;
+  line-height: 1.6;
+  padding: 8px;
+}
+.char-background:focus {
+  outline: none;
+  border-color: var(--color-border-light);
+}
+
+/* ── Talent tree panel ── */
+.talent-portrait {
+  width: 64px;
+  height: 64px;
+  align-self: center;
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-bg);
+  image-rendering: pixelated;
+  overflow: hidden;
+}
+.talent-portrait svg { width: 100%; height: 100%; display: block; }
+.talent-hint {
+  font-size: 0.58em;
+  color: var(--color-text-dim);
+  text-align: center;
+  line-height: 1.5;
+}
+.talent-grid {
+  display: grid;
+  gap: 8px;
+  padding: 6px 2px;
+}
+.talent-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 52px;
+  padding: 5px 3px;
+  font-family: var(--font-pixel);
+  background: var(--color-bg-panel-alt);
+  border: var(--border-width) solid var(--color-border);
+  color: var(--color-text);
+  cursor: default;
+}
+.talent-node-name { font-size: 0.52em; text-align: center; line-height: 1.3; }
+.talent-node-rank { font-size: 0.55em; color: var(--color-text-dim); }
+
+.talent-node-locked    { opacity: 0.45; }
+.talent-node-available {
+  border-color: var(--color-border-light);
+  color: var(--color-text-gold);
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--color-border-light) inset;
+}
+.talent-node-available:hover { background: var(--color-btn-hover-bg); }
+.talent-node-unlocked  { border-color: var(--color-border-light); }
+.talent-node-unlocked .talent-node-rank { color: var(--color-text-gold); }
+.talent-node-maxed {
+  border-color: var(--color-border-gold);
+  color: var(--color-text-gold);
+}
+.talent-node:disabled { cursor: default; }
+
+/* ── Ability list panel ── */
+.ability-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ability-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-panel-alt);
+}
+.ability-slot-empty { opacity: 0.6; }
+.ability-slot-filled { border-color: var(--color-border-light); }
+.ability-slot-num {
+  font-size: 0.6em;
+  color: var(--color-text-dim);
+  min-width: 1em;
+}
+.ability-slot-label {
+  flex: 1;
+  font-size: 0.62em;
+  color: var(--color-text-gold);
+}
+.ability-slot-empty .ability-slot-label { color: var(--color-text-dim); }
+.ability-slot-clear {
+  background: none;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-family: var(--font-pixel);
+  font-size: 0.55em;
+  padding: 2px 5px;
+  cursor: pointer;
+}
+.ability-slot-clear:hover { border-color: var(--color-text-error); color: var(--color-text-error); }
+
+.ability-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ability-row {
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-panel);
+}
+.ability-row-equipped { border-color: var(--color-border-light); }
+.ability-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+.ability-name { font-size: 0.64em; color: var(--color-text-gold); }
+.ability-tag {
+  font-size: 0.52em;
+  color: var(--color-text-dim);
+  text-transform: uppercase;
+}
+.ability-desc {
+  font-size: 0.56em;
+  color: var(--color-text-dim);
+  line-height: 1.5;
+  margin: 4px 0 6px;
+}
+.ability-actions { display: flex; gap: 4px; }
+.ability-slot-btn {
+  flex: 1;
+  background: var(--color-btn-bg);
+  border: 1px solid var(--color-btn-border);
+  color: var(--color-text);
+  font-family: var(--font-pixel);
+  font-size: 0.55em;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.ability-slot-btn:hover { background: var(--color-btn-hover-bg); }
+.ability-slot-btn-active {
+  border-color: var(--color-border-gold);
+  color: var(--color-text-gold);
+  cursor: default;
 }

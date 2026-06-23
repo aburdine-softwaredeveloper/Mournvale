@@ -11,9 +11,13 @@
  */
 
 import type { CharacterData } from "../../types/game";
+import type { ProgressionState } from "../../types/progression";
 
-/** Current save format version. Bump when SaveData's shape changes. */
-export const SAVE_VERSION = 1;
+/**
+ * Current save format version. Bump when SaveData's shape changes.
+ * v2 added `progression`; v1 saves are migrated on load (see SaveStore.load).
+ */
+export const SAVE_VERSION = 2;
 
 /**
  * The full persisted state for a single character.
@@ -25,6 +29,12 @@ export interface SaveData {
   character: CharacterData;
   /** Where the player was when they saved */
   roomId: string;
+  /**
+   * Persistent progression (XP, level, talents, ability loadout). Optional on
+   * the type so v1 saves still parse; SaveStore.load backfills it from class
+   * defaults when missing, so loaded data always carries it.
+   */
+  progression?: ProgressionState;
   /** Unix timestamp (ms) of when this save was written */
   savedAt: number;
 }

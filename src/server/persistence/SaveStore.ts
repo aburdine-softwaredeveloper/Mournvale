@@ -24,6 +24,8 @@ import {
   type SaveData,
   type SaveSlotSummary,
 } from "./saveTypes";
+import type { CharacterClass } from "../../types/network";
+import { newProgression } from "../../types/progression";
 
 // ─────────────────────────────────────────────
 // INTERFACE
@@ -131,7 +133,15 @@ export class JsonFileSaveStore implements SaveStore {
         return null;
       }
 
-      // Future migration hook: if (parsed.version < SAVE_VERSION) { ...migrate... }
+      // Migration: v1 saves predate progression. Backfill a fresh level-1
+      // progression seeded from the character's class so loaded data always
+      // carries one. (A future deeper migration would go here too.)
+      if (!parsed.progression) {
+        parsed.progression = newProgression(
+          parsed.character.characterClass as CharacterClass
+        );
+      }
+      parsed.version = SAVE_VERSION;
 
       return parsed;
     } catch {
@@ -180,12 +190,14 @@ export class JsonFileSaveStore implements SaveStore {
  */
 export function buildSaveData(
   character: SaveData["character"],
-  roomId: string
+  roomId: string,
+  progression?: SaveData["progression"]
 ): SaveData {
   return {
     version: SAVE_VERSION,
     character,
     roomId,
+    ...(progression && { progression }),
     savedAt: Date.now(),
   };
 }

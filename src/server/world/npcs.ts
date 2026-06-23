@@ -37,6 +37,32 @@ export const NPCS: NPC[] = [
     ],
   },
 
+  // ── Tavern Cellar (hostile — the "Cellar Vermin" quest encounter) ──
+  {
+    id: "cellar_rat_1",
+    name: "Cellar Rat",
+    title: "Vermin",
+    role: "hostile",
+    roomId: "cellar",
+    dialogue: [{ text: "It bares yellow teeth and hisses." }],
+  },
+  {
+    id: "cellar_rat_2",
+    name: "Cellar Rat",
+    title: "Vermin",
+    role: "hostile",
+    roomId: "cellar",
+    dialogue: [{ text: "It bares yellow teeth and hisses." }],
+  },
+  {
+    id: "cellar_rat_bold",
+    name: "Bold Rat",
+    title: "Pack Leader",
+    role: "hostile",
+    roomId: "cellar",
+    dialogue: [{ text: "Larger than the rest, it stands its ground." }],
+  },
+
   // ── Guard Post ──
   {
     id: "captain_vey",

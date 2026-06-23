@@ -290,6 +290,10 @@ class MournvaleClient {
         this.questBoard.show();
         break;
 
+      case "skill_screen":
+        this.game.openSkillScreen(msg.payload);
+        break;
+
       // ── Phase 2: NPC interaction with optional skill check display ─────────
       case "npc_interaction": {
         const npc = msg.payload;
@@ -465,6 +469,17 @@ class MournvaleClient {
       case "quests":
       case "quest":
         this.send({ type: "quest_board_request", payload: {} });
+        return;
+
+      case "skills":
+      case "character":
+        // Toggle locally: the screen is opened by the server's skill_screen
+        // message, but closing is a pure client action.
+        if (this.game.isSkillScreenOpen()) {
+          this.game.closeSkillScreen();
+        } else {
+          this.send({ type: "command", payload: { input: "skills" } });
+        }
         return;
 
       case "talk": {

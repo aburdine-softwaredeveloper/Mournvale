@@ -42,6 +42,8 @@ export function handleCommand(playerId: string, input: string): string {
     case "south":
     case "east":
     case "west":
+    case "up":
+    case "down":
       return move(playerId, command);
 
     default:
