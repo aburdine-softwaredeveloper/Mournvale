@@ -35,6 +35,36 @@ export const NPCS: NPC[] = [
       { text: "Mind Aldric — he grumbles, but he's got a soft heart under all that." },
       { text: "Travelers are rare these days. Most roads just... end, now." },
     ],
+    dialogueBranches: [
+      {
+        intent: "inquire",
+        dc: 11,
+        outcomes: {
+          crit_success: {
+            npcLine: "You've a kind way of listening. Truth is, I hear things, leaning over these tables. There's a door in the cellar nobody'll open — Aldric bricked it himself, the year the fog came.",
+            infoReveal: "Aldric bricked over a second cellar door the year the Greyfall arrived.",
+          },
+          success: {
+            npcLine: "You're easy to talk to. The cellar's gone strange since the fog — the rats came up from somewhere they oughtn't.",
+            infoReveal: "The cellar rats came up from somewhere deeper than the cellar.",
+          },
+          fail: { npcLine: "She wipes a mug and looks away. \"Just rumors. Nothing worth your time.\"" },
+          crit_fail: { npcLine: "Marta stiffens. \"You're prying. I've work to do.\" She turns her back." },
+        },
+      },
+      {
+        intent: "persuade",
+        dc: 13,
+        outcomes: {
+          crit_success: {
+            npcLine: "Oh, go on then — first ale's on me. Don't tell Aldric. And… be careful down that cellar, aye?",
+          },
+          success: { npcLine: "You've a honest face. I'll set aside a bowl of stew for you, no charge." },
+          fail: { npcLine: "\"Sweet words don't pour ale, love.\" She smiles, but doesn't budge." },
+          crit_fail: { npcLine: "\"I wasn't born yesterday.\" Marta's smile vanishes." },
+        },
+      },
+    ],
   },
 
   // ── Tavern Cellar (hostile — the "Cellar Vermin" quest encounter) ──
@@ -75,6 +105,39 @@ export const NPCS: NPC[] = [
       { text: "A caravan went missing on the north road. I need eyes I can trust — and a party, not a fool alone." },
     ],
     questIds: ["authored-fog-scout", "authored-wolves"],
+    dialogueBranches: [
+      {
+        intent: "persuade",
+        dc: 14,
+        outcomes: {
+          crit_success: {
+            npcLine: "...You speak plainly, and I respect that. Off the record: the caravan didn't vanish on the road. It turned around and drove straight into the fog. Willingly.",
+            infoReveal: "The lost caravan drove into the Greyfall of its own accord — it was not ambushed.",
+          },
+          success: {
+            npcLine: "Hm. You're not just another sellsword, are you. Fine — the road's safe by day. It's after dark you'll want company.",
+            infoReveal: "The north road is passable by day; the danger comes after dark.",
+          },
+          fail: { npcLine: "\"Save the honeyed words for the magistrate. Take the job or don't.\"" },
+          crit_fail: { npcLine: "The Captain's jaw tightens. \"I've buried men who talked like you. Move along.\"" },
+        },
+      },
+      {
+        intent: "intimidate",
+        dc: 16,
+        outcomes: {
+          crit_success: {
+            npcLine: "...You've a hard edge. Good. The valley needs hard edges now. Don't waste it on me.",
+          },
+          success: { npcLine: "The Captain holds your gaze a long moment, then nods once. \"You'll do.\"" },
+          fail: { npcLine: "\"You're leaning on the wrong man.\" He doesn't so much as blink." },
+          crit_fail: {
+            npcLine: "Two guards step in at the Captain's glance. \"Threaten the watch again and you'll see the inside of a cell.\"",
+            standing: "hostile",
+          },
+        },
+      },
+    ],
   },
 
   // ── Chapel ──
@@ -168,6 +231,24 @@ export const NPCS: NPC[] = [
       { text: "The horses won't go south anymore. They feel it before we do." },
       { text: "Old Bess here? Steadiest mare in the valley. She'd carry you through anything." },
     ],
+    dialogueBranches: [
+      {
+        intent: "inquire",
+        dc: 11,
+        outcomes: {
+          crit_success: {
+            npcLine: "You watch the animals like I do. Bess won't face south — but she stares at the tavern for hours. Whatever's under there, she hears it.",
+            infoReveal: "Tomas's mare reacts to something beneath the tavern, not just the southern fog.",
+          },
+          success: {
+            npcLine: "Aye, you've an eye for it. The beasts started spooking a week before the last fog rolled in. They always know first.",
+            infoReveal: "Animals in the valley sense the fog's approach roughly a week early.",
+          },
+          fail: { npcLine: "Tomas shrugs. \"Horses are horses. Don't read too much into it.\"" },
+          crit_fail: { npcLine: "\"You're spooking 'em worse than the fog. Best step back.\"" },
+        },
+      },
+    ],
   },
 
   // ── Market Square ──
@@ -180,6 +261,40 @@ export const NPCS: NPC[] = [
     dialogue: [
       { text: "Spare a coin? No? Worth a try." },
       { text: "I see everything that happens in this square. Everything. Could be useful to know someone like me." },
+    ],
+    dialogueBranches: [
+      {
+        intent: "persuade",
+        dc: 12,
+        outcomes: {
+          crit_success: {
+            npcLine: "You're alright, you are. Here — the apothecary, Isolde? She buys grave-dirt off the gravekeeper. Regular. Make of that what you will.",
+            infoReveal: "Isolde the apothecary regularly buys grave-dirt from Old Hollis.",
+          },
+          success: {
+            npcLine: "Fine, fine. The watch doubled the gate guard last week. Something's got the Captain spooked.",
+            infoReveal: "The watch quietly doubled the north-gate guard last week.",
+          },
+          fail: { npcLine: "Pip grins and pockets nothing. \"Information's not free, friend.\"" },
+          crit_fail: { npcLine: "\"You think I'm simple?\" Pip melts into the crowd before you finish." },
+        },
+      },
+      {
+        intent: "intimidate",
+        dc: 15,
+        outcomes: {
+          crit_success: {
+            npcLine: "Alright! Alright! The Bold Rat in the tavern cellar — that ain't no rat. I seen it. Big as a dog and twice as mean.",
+            infoReveal: "Pip swears the cellar's 'Bold Rat' is far larger than any vermin should be.",
+          },
+          success: { npcLine: "Pip flinches. \"Easy! I'll talk. The south road's been swallowing folk. That's all I know, swear it.\"" },
+          fail: { npcLine: "\"Big tough adventurer, scaring children.\" He spits at your boots and won't say more." },
+          crit_fail: {
+            npcLine: "\"HELP! Thief! THIEF!\" Pip shrieks until heads turn. He won't come near you again.",
+            standing: "hostile",
+          },
+        },
+      },
     ],
   },
 ];

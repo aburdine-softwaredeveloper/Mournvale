@@ -11,7 +11,9 @@
   "dev:client": "vite",
   "dev": "concurrently -n SERVER,CLIENT -c green,blue \"npm run dev:server\" \"npm run dev:client\"",
   "build:client": "vite build src/client --outDir dist/client",
-  "start": "node dist/server/index.js"
+  "start": "node dist/server/index.js",
+  "typecheck": "tsc --noEmit",
+  "test": "node scripts/run-smoke.mjs"
 },
   "repository": {
     "type": "git",

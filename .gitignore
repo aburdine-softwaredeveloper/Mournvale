@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Emitted JS/declarations from tsc (sources are .ts only)
+src/**/*.js
+src/**/*.d.ts
+src/**/*.js.map
+src/**/*.d.ts.map
+
+# Player save data (runtime, per-machine)
+saves/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~
+
+# Logs
+*.log
+npm-debug.log*
