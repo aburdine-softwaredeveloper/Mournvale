@@ -70,6 +70,25 @@ docs/           Dev progress logs
 - **Pure, testable logic.** Engines (SkillEngine, CombatManager, progression,
   QuestManager) are side-effect-free where possible; `index.ts` does the I/O.
 
+## NPC conversation (free local LLM, optional)
+
+NPCs can hold a free-text conversation: `ask <name> <message>` (or the **Chat**
+button) rolls a server-authoritative d20 skill check, and a **brain** renders the
+NPC's reply conditioned on the result tier. Backends are pluggable
+([`src/server/dialogue/`](src/server/dialogue/)) and tried in order:
+
+1. **Ollama** — a free, local LLM (no API key, no fees, runs offline). Install
+   [Ollama](https://ollama.com), then `ollama pull llama3.2:3b`. The server auto-
+   detects it at `http://localhost:11434`.
+2. **Scripted fallback** — the authored `dialogueBranches` in `npcs.ts`. Always
+   available, used automatically whenever Ollama isn't running. **No setup
+   required** — the feature works out of the box, just less free-form.
+
+Env overrides: `OLLAMA_URL` (default `http://localhost:11434`), `OLLAMA_MODEL`
+(default `llama3.2:3b` — any small chat model works: `qwen2.5:3b`, `gemma2:2b`,
+`phi3.5`). Game mechanics stay server-side regardless of backend, so the LLM only
+ever produces words, never game state.
+
 ## Testing
 
 There's no heavyweight test framework. Logic is covered by **standalone smoke

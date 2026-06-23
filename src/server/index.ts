@@ -43,7 +43,13 @@ import type {
 } from "../types/network";
 import type { TalkIntent } from "../types/npc";
 import type { Player } from "../types/game";
-import type { CharacterClass } from "../types/character";
+import type { CharacterClass, Skill } from "../types/character";
+import { buildCharacterStats } from "../types/character";
+import { rollSkillCheck } from "./skills/SkillEngine";
+import { NpcChatService } from "./dialogue/NpcChatService";
+import { OllamaBrain } from "./dialogue/OllamaBrain";
+import { ScriptedBrain } from "./dialogue/ScriptedBrain";
+import { inferIntent, skillForIntent, TIER_LABEL } from "./dialogue/NpcBrain";
 import {
   newProgression, awardXp, levelForXp,
   spendTalentPoint, spendAttributePoint, equipAbility, unequipSlot, ABILITY_SLOTS,
@@ -63,6 +69,16 @@ const server = new WebSocketServer({ port: PORT });
 const saveStore: SaveStore = new JsonFileSaveStore();
 const partyManager = new PartyManager();
 const questManager = new QuestManager();
+
+/**
+ * Free-text NPC dialogue. Prefers a local Ollama LLM (free, no key — see
+ * OllamaBrain) and falls back to the authored scripted dialogue when Ollama
+ * isn't running. ScriptedBrain must stay last (it's the guaranteed floor).
+ */
+const npcChat = new NpcChatService([new OllamaBrain(), new ScriptedBrain()]);
+
+/** DC for a free-text conversational skill check (moderate). */
+const NPC_CHAT_DC = 12;
 
 /**
  * Maps playerId → WebSocket so we can send targeted messages during
@@ -180,6 +196,7 @@ server.on("connection", (socket: WebSocket) => {
 
     // Remove from socket map before deleting player
     if (currentPlayer.playerId) playerSockets.delete(currentPlayer.playerId);
+    npcChat.clearHistory(currentPlayer.id);
     players.delete(socket);
 
     if (partyResult.disbanded) {
@@ -413,6 +430,9 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
       if (handleSkillCommand(player, socket, msg.payload.input)) return;
       // `fight` starts combat in the player's room — also needs the Player.
       if (handleFightCommand(player, socket, msg.payload.input)) return;
+      // `ask`/`chat` is free-text NPC conversation — async (LLM call), so it
+      // kicks off and returns; the reply arrives via sendToPlayer when ready.
+      if (handleNpcChatCommand(player, socket, msg.payload.input)) return;
 
       const response = handleCommand(player.id, msg.payload.input);
       if (response) sendToPlayer(socket, { type: "system", payload: { message: response } });
@@ -543,6 +563,86 @@ function handleFightCommand(player: Player, socket: WebSocket, input: string): b
   }
 
   triggerCombat(player.roomId);
+  return true;
+}
+
+/**
+ * Handles `ask <npc> <message>` (alias `chat`): free-text conversation with an
+ * NPC. The d20 conversational check is rolled here (server-authoritative); the
+ * NpcChatService only renders the NPC's words, conditioned on the resulting
+ * tier. Returns true if the input was an ask/chat command (handled).
+ *
+ * Async work runs detached: we acknowledge immediately ("considers your
+ * words…"), then deliver the reply via sendToPlayer when the brain responds.
+ */
+function handleNpcChatCommand(player: Player, socket: WebSocket, input: string): boolean {
+  const parts = input.trim().split(/\s+/);
+  const verb = parts[0]?.toLowerCase();
+  if (verb !== "ask" && verb !== "chat") return false;
+
+  if (!player.roomId || !player.character) {
+    sendToPlayer(socket, { type: "system", payload: { message: "You can't speak to anyone right now." } });
+    return true;
+  }
+
+  const targetName = parts[1];
+  const message = parts.slice(2).join(" ").trim();
+  if (!targetName || !message) {
+    sendToPlayer(socket, { type: "system", payload: { message: "Say what, to whom? Try: ask <name> <message>" } });
+    return true;
+  }
+
+  const npc = worldManager.findNpcInRoomByName(player.roomId, targetName);
+  if (!npc) {
+    sendToPlayer(socket, { type: "system", payload: { message: `There's no one named "${targetName}" here.` } });
+    return true;
+  }
+  if (npc.role === "hostile") {
+    sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} is in no mood to talk — you'll need to fight.` } });
+    return true;
+  }
+
+  // ── Roll the conversational check (authoritative) ──
+  const charClass = player.character.characterClass;
+  const intent = inferIntent(message);
+  const skill = skillForIntent(intent) as Skill;
+  const roll = rollSkillCheck(buildCharacterStats(charClass), skill, NPC_CHAT_DC);
+
+  const skillName = skill.charAt(0).toUpperCase() + skill.slice(1);
+  const modSign = roll.roll.modifier >= 0 ? "+" : "";
+
+  // Acknowledge immediately so the player isn't staring at a blank pause.
+  sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} considers your words…` } });
+
+  const roomName = rooms[player.roomId]?.name ?? "Mournvale";
+  const playerName = player.character.name;
+
+  void npcChat
+    .respond(player.id, {
+      npc,
+      playerName,
+      playerClass: charClass,
+      message,
+      skill,
+      intent,
+      tier: roll.tier,
+      roomName,
+    })
+    .then(({ reply }) => {
+      // The dice reveal (so the d20 is visible), then the NPC's spoken line.
+      sendToPlayer(socket, {
+        type: "system",
+        payload: {
+          message: `${skillName} — ${roll.roll.result} ${modSign}${roll.roll.modifier} = ${roll.roll.total} vs DC ${NPC_CHAT_DC} — ${TIER_LABEL[roll.tier]}`,
+        },
+      });
+      sendToPlayer(socket, { type: "chat", payload: { speaker: npc.name, message: reply } });
+    })
+    .catch((err) => {
+      console.error("[npc-chat] reply failed:", err);
+      sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} says nothing.` } });
+    });
+
   return true;
 }
 
