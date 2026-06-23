@@ -44,6 +44,20 @@ check("at least a few distinct NPCs now have skilled dialogue", () => {
   assert.ok(withBranches.length >= 3, `only ${withBranches.length} NPCs have branches`);
 });
 
+check("some branch outcomes carry an infoReveal (the chat lore-reveal payoff)", () => {
+  // runNpcChat surfaces outcome.infoReveal on a matching intent+tier; if no
+  // branch defines one, that mechanical payoff is silently dead.
+  let reveals = 0;
+  for (const npc of NPCS) {
+    for (const branch of npc.dialogueBranches ?? []) {
+      for (const tier of TIERS) {
+        if (branch.outcomes[tier].infoReveal) reveals++;
+      }
+    }
+  }
+  assert.ok(reveals >= 3, `expected several infoReveal outcomes, found ${reveals}`);
+});
+
 check("resolveTalk rolls a check (dice) when the intent matches a branch", () => {
   const marta = worldManager.getNpcById("marta");
   assert.ok(marta, "marta exists");

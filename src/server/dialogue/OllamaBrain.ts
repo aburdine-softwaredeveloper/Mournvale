@@ -32,6 +32,7 @@ export class OllamaBrain implements NpcBrain {
   private readonly model: string;
   private available = false;
   private lastChecked = 0;
+  private probedOnce = false;
 
   constructor(
     url: string = process.env["OLLAMA_URL"] ?? DEFAULT_URL,
@@ -46,15 +47,21 @@ export class OllamaBrain implements NpcBrain {
     if (now - this.lastChecked < AVAILABILITY_TTL_MS) return this.available;
     this.lastChecked = now;
 
+    const was = this.available;
     try {
       const res = await this.fetchWithTimeout(`${this.url}/api/tags`, { method: "GET" }, 1500);
       this.available = res.ok;
     } catch {
       this.available = false;
     }
-    if (!this.available) {
-      console.log(`[npc-brain] Ollama not reachable at ${this.url} — using scripted fallback.`);
+
+    // Log only on state changes (and the very first probe) — not every 30s.
+    if (this.available && !was) {
+      console.log(`[npc-brain] ✓ Ollama connected at ${this.url} (model "${this.model}") — NPCs will improvise.`);
+    } else if (!this.available && (was || !this.probedOnce)) {
+      console.log(`[npc-brain] ✗ Ollama not reachable at ${this.url} — NPCs use scripted dialogue. Start Ollama and pull "${this.model}" for custom replies.`);
     }
+    this.probedOnce = true;
     return this.available;
   }
 

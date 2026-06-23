@@ -301,10 +301,12 @@ export class GameScreen {
           const btn = document.createElement("button");
           btn.className   = "npc-intent-btn";
           btn.textContent = option.label;
-          btn.title       = option.title;
+          btn.title       = `${option.title} — then type what you say`;
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
-            this.send(`talk ${npc.name} ${option.intent}`);
+            // Prefill the action verb + target; the player types their words,
+            // routing through the unified chat with that intent forced.
+            this.focusInputWith(`${option.intent} ${npc.name}`);
             this.collapseNpcRow(wrapper, intentGroup);
           });
           intentGroup.appendChild(btn);

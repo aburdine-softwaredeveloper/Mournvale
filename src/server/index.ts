@@ -21,6 +21,7 @@
 import { WebSocketServer, WebSocket, RawData } from "ws";
 import { randomUUID } from "crypto";
 import { handleCommand } from "./commands";
+import { say } from "./commands/say";
 import { broadcastToRoom, sendToPlayer } from "./roomUtils";
 import { players, rooms, getDisplayName, getActivePlayersInRoom, getPlayerById, getPlayerByPlayerId } from "./gameState";
 import {
@@ -41,7 +42,7 @@ import type {
   ServerMessage,
   CharacterCreationStep,
 } from "../types/network";
-import type { TalkIntent } from "../types/npc";
+import type { TalkIntent, NPC } from "../types/npc";
 import type { Player } from "../types/game";
 import type { CharacterClass, Skill } from "../types/character";
 import { buildCharacterStats } from "../types/character";
@@ -77,8 +78,20 @@ const questManager = new QuestManager();
  */
 const npcChat = new NpcChatService([new OllamaBrain(), new ScriptedBrain()]);
 
-/** DC for a free-text conversational skill check (moderate). */
-const NPC_CHAT_DC = 12;
+/** DC for a free-text conversational skill check (easy — casual talk should
+ * land warm more often than not; raise it for pricklier NPCs later). */
+const NPC_CHAT_DC = 10;
+
+/**
+ * Action verbs that force a conversational approach: `persuade Aldric <words>`.
+ * Without one of these, `say`/`ask` infers the approach from the player's words.
+ */
+const SPEAK_INTENT_VERBS: Record<string, TalkIntent> = {
+  persuade: "persuade",
+  intimidate: "intimidate",
+  inquire: "inquire",
+  deceive: "deceive",
+};
 
 /**
  * Maps playerId → WebSocket so we can send targeted messages during
@@ -430,9 +443,9 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
       if (handleSkillCommand(player, socket, msg.payload.input)) return;
       // `fight` starts combat in the player's room — also needs the Player.
       if (handleFightCommand(player, socket, msg.payload.input)) return;
-      // `ask`/`chat` is free-text NPC conversation — async (LLM call), so it
-      // kicks off and returns; the reply arrives via sendToPlayer when ready.
-      if (handleNpcChatCommand(player, socket, msg.payload.input)) return;
+      // `say`/`speak`/`ask`/`chat` is the one unified speech verb — routes to a
+      // room broadcast or an NPC conversation depending on who's addressed.
+      if (handleSpeakCommand(player, socket, msg.payload.input)) return;
 
       const response = handleCommand(player.id, msg.payload.input);
       if (response) sendToPlayer(socket, { type: "system", payload: { message: response } });
@@ -567,44 +580,101 @@ function handleFightCommand(player: Player, socket: WebSocket, input: string): b
 }
 
 /**
- * Handles `ask <npc> <message>` (alias `chat`): free-text conversation with an
- * NPC. The d20 conversational check is rolled here (server-authoritative); the
- * NpcChatService only renders the NPC's words, conditioned on the resulting
- * tier. Returns true if the input was an ask/chat command (handled).
- *
- * Async work runs detached: we acknowledge immediately ("considers your
- * words…"), then deliver the reply via sendToPlayer when the brain responds.
+ * Unified speech command — `say` (aliases `speak`/`ask`/`chat`). One verb for
+ * all conversation: if the first word names a (non-hostile) NPC in the room, it
+ * becomes a free-text conversation with them (the d20 + NpcChatService path);
+ * otherwise the whole line is broadcast to the room. Returns true if handled.
  */
-function handleNpcChatCommand(player: Player, socket: WebSocket, input: string): boolean {
+function handleSpeakCommand(player: Player, socket: WebSocket, input: string): boolean {
   const parts = input.trim().split(/\s+/);
-  const verb = parts[0]?.toLowerCase();
-  if (verb !== "ask" && verb !== "chat") return false;
+  const verb = parts[0]?.toLowerCase() ?? "";
+  const explicitIntent = SPEAK_INTENT_VERBS[verb];
+  const isSay = verb === "say" || verb === "speak" || verb === "ask" || verb === "chat";
+  if (!isSay && !explicitIntent) return false;
 
   if (!player.roomId || !player.character) {
-    sendToPlayer(socket, { type: "system", payload: { message: "You can't speak to anyone right now." } });
+    sendToPlayer(socket, { type: "system", payload: { message: "You can't speak right now." } });
     return true;
   }
 
-  const targetName = parts[1];
-  const message = parts.slice(2).join(" ").trim();
-  if (!targetName || !message) {
-    sendToPlayer(socket, { type: "system", payload: { message: "Say what, to whom? Try: ask <name> <message>" } });
+  const rest = parts.slice(1);
+
+  // ── Explicit action verb: persuade/intimidate/inquire/deceive <npc> <words> ──
+  if (explicitIntent) {
+    const targetName = rest[0];
+    if (!targetName) {
+      sendToPlayer(socket, { type: "system", payload: { message: `${capitalize(verb)} whom? Try: ${verb} <name> <message>` } });
+      return true;
+    }
+    const npc = worldManager.findNpcInRoomByName(player.roomId, targetName);
+    if (!npc) {
+      sendToPlayer(socket, { type: "system", payload: { message: `There's no one named "${targetName}" here to ${verb}.` } });
+      return true;
+    }
+    if (npc.role === "hostile") {
+      sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} is in no mood to talk — you'll need to fight.` } });
+      return true;
+    }
+    const message = rest.slice(1).join(" ").trim();
+    if (!message) {
+      sendToPlayer(socket, { type: "system", payload: { message: `What do you say to ${npc.name}?` } });
+      return true;
+    }
+    runNpcChat(player, socket, npc, message, explicitIntent);
     return true;
   }
 
-  const npc = worldManager.findNpcInRoomByName(player.roomId, targetName);
-  if (!npc) {
-    sendToPlayer(socket, { type: "system", payload: { message: `There's no one named "${targetName}" here.` } });
-    return true;
-  }
-  if (npc.role === "hostile") {
-    sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} is in no mood to talk — you'll need to fight.` } });
+  // ── Plain speech: address an NPC by name, else broadcast to the room ──
+  if (rest.length === 0) {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: "Say what? Try: say <message> — or say <name> <message> to address someone here." },
+    });
     return true;
   }
 
-  // ── Roll the conversational check (authoritative) ──
-  const charClass = player.character.characterClass;
-  const intent = inferIntent(message);
+  const npc = worldManager.findNpcInRoomByName(player.roomId, rest[0]!);
+  if (npc) {
+    if (npc.role === "hostile") {
+      sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} is in no mood to talk — you'll need to fight.` } });
+      return true;
+    }
+    const message = rest.slice(1).join(" ").trim();
+    if (!message) {
+      sendToPlayer(socket, { type: "system", payload: { message: `What would you like to say to ${npc.name}?` } });
+      return true;
+    }
+    runNpcChat(player, socket, npc, message); // approach inferred from the words
+    return true;
+  }
+
+  // Otherwise it's room/party chat — broadcast the whole line.
+  const response = say(player.id, rest);
+  if (response) sendToPlayer(socket, { type: "system", payload: { message: response } });
+  return true;
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Runs a free-text NPC conversation: rolls the d20 conversational check
+ * (server-authoritative), then asks the NpcChatService to render the NPC's
+ * words conditioned on the result tier. Acknowledges immediately and delivers
+ * the dice reveal + spoken reply when the brain responds (async/detached).
+ */
+function runNpcChat(
+  player: Player,
+  socket: WebSocket,
+  npc: NPC,
+  message: string,
+  explicitIntent?: TalkIntent
+): void {
+  const charClass = player.character!.characterClass;
+  // An explicit action verb (persuade/intimidate/…) overrides inference;
+  // otherwise the approach is read from the player's own words.
+  const intent = explicitIntent ?? inferIntent(message);
   const skill = skillForIntent(intent) as Skill;
   const roll = rollSkillCheck(buildCharacterStats(charClass), skill, NPC_CHAT_DC);
 
@@ -614,20 +684,11 @@ function handleNpcChatCommand(player: Player, socket: WebSocket, input: string):
   // Acknowledge immediately so the player isn't staring at a blank pause.
   sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} considers your words…` } });
 
-  const roomName = rooms[player.roomId]?.name ?? "Mournvale";
-  const playerName = player.character.name;
+  const roomName = rooms[player.roomId!]?.name ?? "Mournvale";
+  const playerName = player.character!.name;
 
   void npcChat
-    .respond(player.id, {
-      npc,
-      playerName,
-      playerClass: charClass,
-      message,
-      skill,
-      intent,
-      tier: roll.tier,
-      roomName,
-    })
+    .respond(player.id, { npc, playerName, playerClass: charClass, message, skill, intent, tier: roll.tier, roomName })
     .then(({ reply }) => {
       // The dice reveal (so the d20 is visible), then the NPC's spoken line.
       sendToPlayer(socket, {
@@ -637,13 +698,22 @@ function handleNpcChatCommand(player: Player, socket: WebSocket, input: string):
         },
       });
       sendToPlayer(socket, { type: "chat", payload: { speaker: npc.name, message: reply } });
+
+      // Authored mechanical payoff: if this NPC has a branch for the approach
+      // taken, the rolled tier can still reveal lore / nudge a quest — the dice
+      // matter regardless of whether an LLM or the scripted brain wrote the words.
+      const outcome = npc.dialogueBranches?.find((b) => b.intent === intent)?.outcomes[roll.tier];
+      if (outcome?.infoReveal) {
+        sendToPlayer(socket, { type: "system", payload: { message: `You glean something: ${outcome.infoReveal}` } });
+      }
+      if (outcome?.questUnlock) {
+        sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} has work for you — check the quest board.` } });
+      }
     })
     .catch((err) => {
       console.error("[npc-chat] reply failed:", err);
       sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} says nothing.` } });
     });
-
-  return true;
 }
 
 /**
