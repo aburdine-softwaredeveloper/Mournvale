@@ -11,41 +11,19 @@
  */
 
 import { WebSocket } from "ws";
-import type { Player, Room } from "../types/game";
+import type { Player } from "../types/game";
+import { worldManager } from "./world/WorldManager";
 
 // ─────────────────────────────────────────────
 // WORLD DATA
 // ─────────────────────────────────────────────
 
 /**
- * The room registry — all rooms in the game world.
- * Will be moved to /world/ once the world system is built out.
- * Kept here temporarily for bootstrapping.
+ * The room registry. World content now lives in src/server/world/rooms.ts
+ * and is owned by the WorldManager; this re-export preserves the existing
+ * `rooms[roomId]` access pattern used across command handlers and index.ts.
  */
-export const rooms: Record<string, Room> = {
-  tavern: {
-    id: "tavern",
-    name: "The Broken Lantern",
-    description:
-      "A dimly lit tavern filled with the smell of ale and wet wood. " +
-      "Candles flicker on rough-hewn tables. Behind the bar, the keeper " +
-      "eyes you with a weathered curiosity.",
-    exits: {
-      north: "street",
-    },
-  },
-
-  street: {
-    id: "street",
-    name: "Cobblestone Street",
-    description:
-      "A narrow street outside the tavern. Iron lanterns flicker in the fog. " +
-      "The cobblestones glisten with recent rain.",
-    exits: {
-      south: "tavern",
-    },
-  },
-};
+export const rooms = worldManager.getRooms();
 
 // ─────────────────────────────────────────────
 // PLAYER REGISTRY
@@ -62,12 +40,25 @@ export const players = new Map<WebSocket, Player>();
 // ─────────────────────────────────────────────
 
 /**
- * Look up a player by their UUID.
- * Used when you only have a player ID (e.g. in command handlers).
+ * Look up a player by their per-session UUID (`Player.id`).
+ * Used when you only have a session id (e.g. in command handlers).
  */
 export function getPlayerById(playerId: string): Player | undefined {
   for (const player of players.values()) {
     if (player.id === playerId) return player;
+  }
+  return undefined;
+}
+
+/**
+ * Look up a player by their persistent identity (`Player.playerId`, supplied
+ * via the identify message and used to key sockets and combat entities).
+ * Returns the first match — two tabs sharing a playerId is an edge case the
+ * combat/save flow does not support concurrently.
+ */
+export function getPlayerByPlayerId(playerId: string): Player | undefined {
+  for (const player of players.values()) {
+    if (player.playerId === playerId) return player;
   }
   return undefined;
 }

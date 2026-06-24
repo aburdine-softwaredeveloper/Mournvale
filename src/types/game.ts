@@ -12,6 +12,7 @@
 
 import { WebSocket } from "ws";
 import type { PlayerState, CharacterDraft, CharacterClass, Gender } from "./network";
+import type { ProgressionState } from "./progression";
 
 // ─────────────────────────────────────────────
 // PLAYER
@@ -25,7 +26,6 @@ export interface CharacterData {
   name: string;
   gender: Gender;
   characterClass: CharacterClass;
-  hairStyle: string;
   hairColor: string;
   glasses: boolean;
 }
@@ -80,13 +80,21 @@ export interface Player {
    * Only meaningful when state === "active".
    */
   roomId?: string;
+
+  /**
+   * Persistent character progression (XP, level, talent ranks, ability
+   * loadout) scoped to `activeSlot`. Created at character finalization and
+   * loaded from the save on "Load Game"; persisted alongside `character`.
+   * Only present when state === "active".
+   */
+  progression?: ProgressionState;
 }
 
 // ─────────────────────────────────────────────
 // ROOM
 // ─────────────────────────────────────────────
 
-export type Direction = "north" | "south" | "east" | "west";
+export type Direction = "north" | "south" | "east" | "west" | "up" | "down";
 
 /**
  * Room — a single location in the game world.
@@ -100,4 +108,11 @@ export interface Room {
   name: string;
   description: string;
   exits: Partial<Record<Direction, string>>;
+  /**
+   * Optional art asset key for the room scene. Resolved as tiles/{artKey}
+   * via the AssetRegistry, which defaults to .svg but accepts an explicit
+   * extension (e.g. "tavern.png") so art can be raster or vector per room.
+   * Rooms without art show a placeholder.
+   */
+  artKey?: string;
 }

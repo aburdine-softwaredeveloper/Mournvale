@@ -1,0 +1,64 @@
+/* ============================================================
+   menu-intro-fog.css
+   Scoped ONLY to fog canvas positioning and screen backgrounds.
+   Does NOT touch buttons, layout, fonts, or any shared classes.
+   ============================================================ */
+
+/* â”€â”€ Screen backgrounds (replaces the grid) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+#screen-menu {
+  position: relative;
+  overflow: hidden;
+  background: #0a0608;
+}
+
+#screen-intro {
+  position: relative;
+  overflow: hidden;
+  background: #0a0608;
+}
+
+/* â”€â”€ Fog canvas sits behind everything â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.fog-canvas,
+.intro-fog-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* â”€â”€ All direct children sit above the canvas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+#screen-menu > *:not(.fog-canvas),
+#screen-intro > *:not(.intro-fog-canvas) {
+  position: relative;
+  z-index: 2;
+}
+
+/* â”€â”€ Vignette overlay (above fog, below content) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+#screen-menu::after,
+#screen-intro::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(
+    ellipse 80% 70% at 50% 50%,
+    transparent 30%,
+    rgba(4, 2, 8, 0.55) 100%
+  );
+}
+
+/* â”€â”€ Reduced motion: hide canvas, keep background â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+@media (prefers-reduced-motion: reduce) {
+  .fog-canvas,
+  .intro-fog-canvas {
+    display: none;
+  }
+}

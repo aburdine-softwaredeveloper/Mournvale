@@ -1,97 +1,426 @@
 /**
  * GameScreen.ts — The main game interface for active players
  *
- * Responsibilities:
- *   - Render the room panel (name, description, exits, occupants)
- *   - Append messages to the scrolling log (system/chat/presence/error)
- *   - Host the CommandMenu (clickable command buttons)
- *   - Handle the text input for custom/typed commands
+ * Left panel layout (stacked, always visible):
+ *   ┌─────────────────┐
+ *   │ HERE:           │  ← NPCs at the current location only
+ *   │  Merchant       │     "No one is here." if empty
+ *   │  Guard          │
+ *   ├─────────────────┤  ← thin divider
+ *   │ PARTY:          │  ← party members (blank section if solo)
+ *   │  Aelric  HP ██  │
+ *   └─────────────────┘
  *
- * All outgoing commands flow through a single onCommand callback that
- * the app forwards to the server as `command` messages.
+ * Players / party members are never listed in the Here: section.
+ * Party state comes exclusively from updateParty(); the players[]
+ * field on RoomMessage is intentionally ignored.
  *
- * Architecture: GameScreen owns presentation only. It never talks to
- * the socket directly — the app injects the send callback.
+ * Phase 2 NPC intent buttons are preserved unchanged.
+ * All outgoing commands flow through the onCommand callback.
  */
 
-import { CommandMenu, DEFAULT_COMMANDS } from "../components/CommandMenu";
-import type { RoomMessage } from "../../types/network";
+import { CommandMenu, DEFAULT_COMMANDS, VERTICAL_COMMANDS, type CommandDefinition } from "../components/CommandMenu";
+import { PartyPanel } from "../components/PartyPanel";
+import { CharacterPanel } from "../components/CharacterPanel";
+import { TalentTreePanel } from "../components/TalentTreePanel";
+import { AbilityListPanel } from "../components/AbilityListPanel";
+import { assetRegistry } from "../../engine/assets/AssetRegistry";
+import {
+  portraitCompositor,
+  type PortraitSpec,
+} from "../../engine/assets/PortraitCompositor";
+import type { RoomMessage, SkillScreenView } from "../../types/network";
+import type { PartyView } from "../../types/party";
+import type { NpcView, NpcRole, TalkIntent } from "../../types/npc";
 
 export type LogKind = "system" | "chat" | "error" | "presence" | "default";
 
+// ── Intent config ─────────────────────────────────────────────────────────────
+
+interface IntentOption {
+  intent: TalkIntent;
+  label: string;
+  title: string;
+}
+
+const INTENT_OPTIONS: IntentOption[] = [
+  { intent: "inquire",    label: "Inquire",    title: "Ask a direct question (Insight)" },
+  { intent: "persuade",   label: "Persuade",   title: "Appeal to reason or emotion (Persuasion)" },
+  { intent: "intimidate", label: "Intimidate", title: "Use force of personality (Intimidation)" },
+  { intent: "deceive",    label: "Deceive",    title: "Mislead or misdirect (Deception)" },
+];
+
+// ─────────────────────────────────────────────
+// GameScreen
+// ─────────────────────────────────────────────
+
 export class GameScreen {
+  // Header
   private readonly headerName: HTMLElement;
   private readonly headerClass: HTMLElement;
+  private readonly headerPortrait: HTMLElement;
+
+  // Room panel
   private readonly roomName: HTMLElement;
   private readonly roomDesc: HTMLElement;
   private readonly roomExits: HTMLElement;
-  private readonly roomPlayers: HTMLElement;
+  private readonly roomNpcs: HTMLElement;
+  private readonly roomImage: HTMLElement;
+
+  // Log + input
   private readonly messageLog: HTMLElement;
   private readonly commandInput: HTMLInputElement;
   private readonly commandSend: HTMLButtonElement;
 
+  // Sub-components
   private readonly commandMenu: CommandMenu;
+  private readonly partyPanel: PartyPanel;
   private onCommand: ((input: string) => void) | null = null;
 
+  // Character/skills screen — repurposes the three panels in place
+  private readonly characterPanel: CharacterPanel;
+  private readonly talentTreePanel: TalentTreePanel;
+  private readonly abilityListPanel: AbilityListPanel;
+  /** The three panel elements toggled into "skills" mode together. */
+  private readonly skillPanels: HTMLElement[];
+  private skillScreenOpen = false;
+  /** Cached portrait spec, reused for the talent panel preview. */
+  private portraitSpec: PortraitSpec | null = null;
+
+  /** Tracks the last room art key so we don't re-fetch on every update */
+  private currentArtKey: string | null = null;
+
+  /**
+   * Id of the NPC row currently expanded to show intent buttons.
+   * Null when no row is open.
+   */
+  private expandedNpcId: string | null = null;
+
   constructor() {
-    this.headerName = this.requireEl("player-name-display");
-    this.headerClass = this.requireEl("player-class-display");
-    this.roomName = this.requireEl("room-name");
-    this.roomDesc = this.requireEl("room-description");
+    this.headerName     = this.requireEl("player-name-display");
+    this.headerClass    = this.requireEl("player-class-display");
+    this.headerPortrait = this.requireEl("header-portrait");
+
+    this.roomName  = this.requireEl("room-name");
+    this.roomDesc  = this.requireEl("room-description");
     this.roomExits = this.requireEl("room-exits");
-    this.roomPlayers = this.requireEl("room-players");
-    this.messageLog = this.requireEl("message-log");
+    this.roomNpcs  = this.requireEl("room-npcs");
+    this.roomImage = this.requireEl("room-image");
+
+    this.messageLog   = this.requireEl("message-log");
     this.commandInput = this.requireEl("command-input") as HTMLInputElement;
-    this.commandSend = this.requireEl("command-send") as HTMLButtonElement;
+    this.commandSend  = this.requireEl("command-send")  as HTMLButtonElement;
 
     this.commandMenu = new CommandMenu("command-buttons");
+    this.partyPanel  = new PartyPanel();
+
+    // Character/skills panels (hidden until openSkillScreen)
+    this.characterPanel   = new CharacterPanel("character-panel");
+    this.talentTreePanel  = new TalentTreePanel("talent-panel");
+    this.abilityListPanel = new AbilityListPanel("ability-panel");
+    this.skillPanels = [
+      this.requireEl("details-panel"),
+      this.requireEl("room-image-panel"),
+      this.requireEl("log-panel"),
+    ];
+
+    this.characterPanel.setCloseHandler(() => this.closeSkillScreen());
+    this.characterPanel.setCommandHandler((cmd) => this.send(cmd));
+    this.talentTreePanel.setCommandHandler((cmd) => this.send(cmd));
+    this.abilityListPanel.setCommandHandler((cmd) => this.send(cmd));
+
     this.wireInput();
   }
 
+  // ─────────────────────────────────────────────
+  // PUBLIC API
+  // ─────────────────────────────────────────────
+
+  public setPartyLeaveHandler(handler: () => void): void {
+    this.partyPanel.setLeaveHandler(handler);
+  }
+
+  public updateParty(party: PartyView | null): void {
+    this.partyPanel.update(party);
+  }
+
+  // ─────────────────────────────────────────────
+  // CHARACTER / SKILLS SCREEN
+  // ─────────────────────────────────────────────
+
   /**
-   * Initializes the screen with the player's identity and command set.
-   * @param onCommand callback invoked with every command string to send
+   * Opens (or refreshes) the character/skills screen by swapping the three
+   * panels into "skills" mode and rendering them from the server view. Safe to
+   * call repeatedly: the server re-emits the view after every mutation, and
+   * each call just re-renders while the screen stays open. The underlying room
+   * and party DOM is only hidden (via CSS), so closing restores it as-is —
+   * no caching or re-render of room state needed.
    */
+  public openSkillScreen(view: SkillScreenView): void {
+    this.characterPanel.update(view);
+    this.talentTreePanel.update(view);
+    this.abilityListPanel.update(view);
+
+    if (!this.skillScreenOpen) {
+      for (const panel of this.skillPanels) panel.classList.add("skills-active");
+      this.skillScreenOpen = true;
+    }
+  }
+
+  public closeSkillScreen(): void {
+    if (!this.skillScreenOpen) return;
+    for (const panel of this.skillPanels) panel.classList.remove("skills-active");
+    this.skillScreenOpen = false;
+  }
+
+  public isSkillScreenOpen(): boolean {
+    return this.skillScreenOpen;
+  }
+
   public init(
     playerName: string,
     playerClass: string,
+    portraitSpec: PortraitSpec | null,
     onCommand: (input: string) => void
   ): void {
     this.onCommand = onCommand;
-    this.headerName.textContent = playerName;
+    this.headerName.textContent  = playerName;
     this.headerClass.textContent = playerClass.toUpperCase();
+    this.portraitSpec = portraitSpec;
+    this.talentTreePanel.setPortraitSpec(portraitSpec);
+
+    if (portraitSpec) {
+      this.headerPortrait.innerHTML = portraitCompositor.compose(portraitSpec);
+    }
 
     this.commandMenu.render(
       DEFAULT_COMMANDS,
-      // Direct command (no argument) → send immediately
       (command) => this.send(command),
-      // Argument-requiring command → focus input with prefix
-      (prefix) => this.focusInputWith(prefix)
+      (prefix)  => this.focusInputWith(prefix)
     );
   }
 
-  /** Updates the room panel from a RoomMessage */
   public updateRoom(msg: RoomMessage): void {
-    const { name, description, exits, players } = msg.payload;
+    const { name, description, exits, npcs, artKey } = msg.payload;
 
-    this.roomName.textContent = name;
-    this.roomDesc.textContent = description;
+    // NOTE: msg.payload.players is intentionally unused here.
+    // Party member presence is managed exclusively via updateParty().
+    // Only NPCs appear in the Here: section.
+
+    this.roomName.textContent  = name;
+    this.roomDesc.textContent  = description;
     this.roomExits.textContent = exits.length > 0 ? exits.join(", ") : "none";
 
-    this.roomPlayers.textContent =
-      players.length > 0 ? players.join("\n") : "You are alone.";
+    this.updateVerticalCommands(exits);
+    this.expandedNpcId = null;
+    this.renderNpcs(npcs);
+    this.updateRoomImage(artKey);
   }
 
-  /** Appends a line to the message log and scrolls to the bottom */
+  /**
+   * Shows Up/Down buttons only when the current room has that vertical exit.
+   * Horizontal movement stays always-on (the N/S/E/W buttons), matching the
+   * existing UX; only vertical movement is gated on availability.
+   */
+  private updateVerticalCommands(exits: string[]): void {
+    const contextual: CommandDefinition[] = [];
+    if (exits.includes("up"))   contextual.push(VERTICAL_COMMANDS.up);
+    if (exits.includes("down")) contextual.push(VERTICAL_COMMANDS.down);
+    this.commandMenu.setContextual(contextual);
+  }
+
   public log(text: string, kind: LogKind = "default"): void {
     const entry = document.createElement("div");
-    entry.className = `log-entry log-${kind}`;
+    entry.className   = `log-entry log-${kind}`;
     entry.textContent = text;
     this.messageLog.appendChild(entry);
     this.messageLog.scrollTop = this.messageLog.scrollHeight;
   }
 
-  /** Wires the text input (Enter key + Send button) */
+  // ─────────────────────────────────────────────
+  // NPC RENDERING
+  // ─────────────────────────────────────────────
+
+  /**
+   * Renders the Here: section with NPCs only.
+   * Shows "No one is here." when the list is empty.
+   * Party members are never rendered here.
+   */
+  private renderNpcs(npcs: NpcView[]): void {
+    this.roomNpcs.innerHTML = "";
+
+    if (npcs.length === 0) {
+      const empty = document.createElement("span");
+      empty.className   = "room-npcs-empty";
+      empty.textContent = "No one is here.";
+      this.roomNpcs.appendChild(empty);
+      return;
+    }
+
+    for (const npc of npcs) {
+      const wrapper = document.createElement("div");
+      wrapper.className        = "npc-wrapper";
+      wrapper.dataset["npcId"] = npc.id;
+
+      // ── Header row ──────────────────────────────────────────────────────
+      const header = document.createElement("div");
+      header.className = "npc-row";
+      header.title     = npc.role === "hostile"
+        ? `${npc.name} is hostile`
+        : `Talk to ${npc.name}`;
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className   = "npc-name";
+      nameSpan.textContent = `${npc.name} — ${npc.title}`;
+
+      const roleTag = document.createElement("span");
+      roleTag.className   = `npc-role-tag npc-role-${npc.role}`;
+      roleTag.textContent = this.roleLabel(npc.role);
+
+      header.appendChild(nameSpan);
+      header.appendChild(roleTag);
+
+      // ── Intent group ─────────────────────────────────────────────────────
+      const intentGroup = document.createElement("div");
+      intentGroup.className     = "npc-intent-group";
+      intentGroup.style.display = "none";
+
+      if (npc.role === "hostile") {
+        const fightBtn = document.createElement("button");
+        fightBtn.className   = "npc-intent-btn npc-intent-fight";
+        fightBtn.textContent = "⚔ Fight";
+        fightBtn.title       = "Engage in combat";
+        fightBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.send(`fight ${npc.name}`);
+          this.collapseNpcRow(wrapper, intentGroup);
+        });
+        intentGroup.appendChild(fightBtn);
+      } else {
+        for (const option of INTENT_OPTIONS) {
+          const btn = document.createElement("button");
+          btn.className   = "npc-intent-btn";
+          btn.textContent = option.label;
+          btn.title       = `${option.title} — then type what you say`;
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            // Prefill the action verb + target; the player types their words,
+            // routing through the unified chat with that intent forced.
+            this.focusInputWith(`${option.intent} ${npc.name}`);
+            this.collapseNpcRow(wrapper, intentGroup);
+          });
+          intentGroup.appendChild(btn);
+        }
+      }
+
+      // ── Toggle logic ─────────────────────────────────────────────────────
+      header.addEventListener("click", () => {
+        const isOpen = intentGroup.style.display !== "none";
+
+        if (this.expandedNpcId && this.expandedNpcId !== npc.id) {
+          const prevGroup = this.roomNpcs.querySelector<HTMLElement>(
+            `[data-npc-id="${this.expandedNpcId}"] .npc-intent-group`
+          );
+          const prevWrap = this.roomNpcs.querySelector<HTMLElement>(
+            `[data-npc-id="${this.expandedNpcId}"]`
+          );
+          if (prevGroup) prevGroup.style.display = "none";
+          if (prevWrap)  prevWrap.classList.remove("npc-wrapper-open");
+        }
+
+        if (isOpen) {
+          intentGroup.style.display = "none";
+          wrapper.classList.remove("npc-wrapper-open");
+          this.expandedNpcId = null;
+        } else {
+          intentGroup.style.display = "flex";
+          wrapper.classList.add("npc-wrapper-open");
+          this.expandedNpcId = npc.id;
+        }
+      });
+
+      wrapper.appendChild(header);
+      wrapper.appendChild(intentGroup);
+      this.roomNpcs.appendChild(wrapper);
+    }
+  }
+
+  private collapseNpcRow(wrapper: HTMLElement, intentGroup: HTMLElement): void {
+    intentGroup.style.display = "none";
+    wrapper.classList.remove("npc-wrapper-open");
+    this.expandedNpcId = null;
+  }
+
+  private roleLabel(role: NpcRole): string {
+    const labels: Record<NpcRole, string> = {
+      dialogue:   "",
+      friendly:   "",
+      questgiver: "quest",
+      vendor:     "shop",
+      hostile:    "hostile",
+    };
+    return labels[role] ?? "";
+  }
+
+  // ─────────────────────────────────────────────
+  // ROOM IMAGE
+  // ─────────────────────────────────────────────
+
+  private updateRoomImage(artKey: string | undefined): void {
+    if (artKey === this.currentArtKey) return;
+    this.currentArtKey = artKey ?? null;
+
+    if (!artKey) {
+      this.roomImage.innerHTML = '<div class="room-image-empty">— no view —</div>';
+      return;
+    }
+
+    const key = `tiles/${artKey}` as const;
+
+    // Raster art (PNG/JPG/…) loads lazily via <img src>; no text fetch.
+    if (assetRegistry.isRaster(key)) {
+      this.setRoomImagePng(artKey, assetRegistry.resolveUrl(key));
+      return;
+    }
+
+    // SVG art is fetched as text and injected inline (themeable).
+    const cached = assetRegistry.get(key);
+    if (cached) {
+      this.roomImage.innerHTML = cached;
+      return;
+    }
+
+    void assetRegistry
+      .load(key)
+      .then((content) => {
+        if (this.currentArtKey === artKey) this.roomImage.innerHTML = content;
+      })
+      .catch(() => {
+        if (this.currentArtKey === artKey) {
+          this.roomImage.innerHTML = '<div class="room-image-empty">— no view —</div>';
+        }
+      });
+  }
+
+  /** Renders a raster room image as an <img>, replacing any prior content. */
+  private setRoomImagePng(artKey: string, url: string): void {
+    const img     = document.createElement("img");
+    img.src       = url;
+    img.alt       = artKey;
+    img.className = "room-image-png";
+    img.onerror   = () => {
+      if (this.currentArtKey === artKey) {
+        this.roomImage.innerHTML = '<div class="room-image-empty">— no view —</div>';
+      }
+    };
+    this.roomImage.innerHTML = "";
+    this.roomImage.appendChild(img);
+  }
+
+  // ─────────────────────────────────────────────
+  // INPUT
+  // ─────────────────────────────────────────────
+
   private wireInput(): void {
     const submit = () => {
       const value = this.commandInput.value.trim();
@@ -102,23 +431,17 @@ export class GameScreen {
 
     this.commandSend.addEventListener("click", submit);
     this.commandInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        submit();
-      }
+      if (e.key === "Enter") { e.preventDefault(); submit(); }
     });
   }
 
-  /** Focuses the input with a command prefix pre-filled (e.g. "say ") */
   private focusInputWith(prefix: string): void {
     this.commandInput.value = `${prefix} `;
     this.commandInput.focus();
-    // Move cursor to end
     const len = this.commandInput.value.length;
     this.commandInput.setSelectionRange(len, len);
   }
 
-  /** Sends a command via the injected callback */
   private send(input: string): void {
     this.onCommand?.(input);
   }

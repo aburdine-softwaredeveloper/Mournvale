@@ -27,13 +27,13 @@ import type { CharacterData } from "../../types/game";
 const SPEAKER = "Aldric the Barkeep";
 
 const CLASS_CHOICES: DialogueChoice[] = [
-  { label: "⚔️  Knight",  value: "Knight"  },
-  { label: "💚  Healer",  value: "Healer"  },
-  { label: "👊  Fighter", value: "Fighter" },
-  { label: "🙏  Monk",    value: "Monk"    },
-  { label: "🔮  Mage",    value: "Mage"    },
-  { label: "🗡️  Thief",   value: "Thief"   },
-  { label: "🏹  Archer",  value: "Archer"  },
+  { label: "[+] Knight",  value: "Knight"  },
+  { label: "[*] Healer",  value: "Healer"  },
+  { label: "[X] Warrior", value: "Warrior" },
+  { label: "[o] Monk",    value: "Monk"    },
+  { label: "[~] Mage",    value: "Mage"    },
+  { label: "[/] Thief",   value: "Thief"   },
+  { label: "[>] Archer",  value: "Archer"  },
 ];
 
 const GENDER_CHOICES: DialogueChoice[] = [
@@ -41,22 +41,10 @@ const GENDER_CHOICES: DialogueChoice[] = [
   { label: "Female", value: "Female" },
 ];
 
-const HAIR_STYLE_CHOICES: DialogueChoice[] = [
-  { label: "Short",    value: "Short"    },
-  { label: "Long",     value: "Long"     },
-  { label: "Braided",  value: "Braided"  },
-  { label: "Shaved",   value: "Shaved"   },
-  { label: "Curly",    value: "Curly"    },
-  { label: "Ponytail", value: "Ponytail" },
-];
-
 const HAIR_COLOR_CHOICES: DialogueChoice[] = [
   { label: "Black",  value: "Black"  },
   { label: "Brown",  value: "Brown"  },
   { label: "Blonde", value: "Blonde" },
-  { label: "Red",    value: "Red"    },
-  { label: "White",  value: "White"  },
-  { label: "Silver", value: "Silver" },
 ];
 
 const GLASSES_CHOICES: DialogueChoice[] = [
@@ -71,12 +59,14 @@ const GLASSES_CHOICES: DialogueChoice[] = [
 /**
  * The ordered sequence of creation steps.
  * Changing this order is the only thing needed to reorder the conversation.
+ *
+ * Note: hair_style was removed — character portraits are full-body sprites
+ * keyed by (gender, hairColor, class), so style is no longer chosen.
  */
 const CREATION_STEPS: CharacterCreationStep[] = [
   "name",
   "gender",
   "class",
-  "hair_style",
   "hair_color",
   "glasses",
   "confirm",
@@ -134,7 +124,7 @@ export function getDialogueForStep(
         },
       };
 
-    case "hair_style":
+    case "hair_color":
       return {
         type: "dialogue",
         payload: {
@@ -143,18 +133,7 @@ export function getDialogueForStep(
             "A " +
             (draft.characterClass ?? "traveler") +
             "... good choice. " +
-            "Now let me take a good look at you. How do you wear your hair?",
-          step: "hair_style",
-          choices: HAIR_STYLE_CHOICES,
-        },
-      };
-
-    case "hair_color":
-      return {
-        type: "dialogue",
-        payload: {
-          speaker: SPEAKER,
-          text: "And what color is it?",
+            "Now let me take a good look at you. What color is your hair?",
           step: "hair_color",
           choices: HAIR_COLOR_CHOICES,
         },
@@ -178,8 +157,8 @@ export function getDialogueForStep(
           speaker: SPEAKER,
           text:
             `So then — ${draft.name ?? "stranger"}, ` +
-            `a ${draft.gender ?? ""} ${draft.characterClass ?? ""}, ` +
-            `${draft.hairColor} ${draft.hairStyle} hair` +
+            `a ${draft.gender ?? ""} ${draft.characterClass ?? ""} ` +
+            `with ${draft.hairColor ?? ""} hair` +
             (draft.glasses ? ", spectacles and all." : ".") +
             " Is that right?",
           step: "confirm",
@@ -252,7 +231,7 @@ export function applyAnswer(
 
     case "class": {
       const validClasses: CharacterClass[] = [
-        "Knight", "Healer", "Fighter", "Monk", "Mage", "Thief", "Archer",
+        "Knight", "Healer", "Warrior", "Monk", "Mage", "Thief", "Archer",
       ];
       if (!validClasses.includes(value as CharacterClass)) {
         return "Please choose a valid class.";
@@ -261,15 +240,8 @@ export function applyAnswer(
       return null;
     }
 
-    case "hair_style": {
-      const valid = ["Short", "Long", "Braided", "Shaved", "Curly", "Ponytail"];
-      if (!valid.includes(value)) return "Please choose a valid hair style.";
-      draft.hairStyle = value;
-      return null;
-    }
-
     case "hair_color": {
-      const valid = ["Black", "Brown", "Blonde", "Red", "White", "Silver"];
+      const valid = ["Black", "Brown", "Blonde"];
       if (!valid.includes(value)) return "Please choose a valid hair color.";
       draft.hairColor = value;
       return null;
@@ -303,7 +275,6 @@ export function finalizeDraft(draft: CharacterDraft): CharacterData {
     !draft.name ||
     !draft.gender ||
     !draft.characterClass ||
-    !draft.hairStyle ||
     !draft.hairColor ||
     draft.glasses === undefined
   ) {
@@ -317,7 +288,6 @@ export function finalizeDraft(draft: CharacterDraft): CharacterData {
     name: draft.name,
     gender: draft.gender,
     characterClass: draft.characterClass,
-    hairStyle: draft.hairStyle,
     hairColor: draft.hairColor,
     glasses: draft.glasses,
   };

@@ -1,0 +1,10 @@
+# Never copy these into the image — deps are reinstalled, the client is rebuilt,
+# and saves are a host-mounted runtime volume (must not be baked in).
+node_modules
+dist
+saves
+.git
+.gitignore
+*.log
+.DS_Store
+.vscode

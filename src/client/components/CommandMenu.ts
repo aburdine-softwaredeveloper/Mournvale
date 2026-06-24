@@ -33,13 +33,38 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   { command: "south", label: "South", shortcut: "s" },
   { command: "east",  label: "East",  shortcut: "d" },
   { command: "west",  label: "West",  shortcut: "a" },
-  { command: "say",   label: "Say",   shortcut: "t", needsArgument: true },
+  { command: "say",   label: "Speak", shortcut: "t", needsArgument: true },
+  { command: "invite", label: "Invite", shortcut: "i", needsArgument: true },
+  { command: "party", label: "Party", shortcut: "p" },
+  { command: "quests", label: "Quests", shortcut: "q" },
+  { command: "map",    label: "Map",    shortcut: "m" },
+  { command: "skills", label: "Skills", shortcut: "c" },
   { command: "help",  label: "Help",  shortcut: "h" },
 ];
 
+/**
+ * Vertical-movement commands, surfaced as contextual buttons only when the
+ * current room actually has that exit (see GameScreen.updateRoom). Kept out of
+ * DEFAULT_COMMANDS so they don't show in rooms with no stairs/ladder.
+ */
+export const VERTICAL_COMMANDS: Record<"up" | "down", CommandDefinition> = {
+  up:   { command: "up",   label: "Up ▲" },
+  down: { command: "down", label: "Down ▼" },
+};
+
 export class CommandMenu {
   private readonly container: HTMLElement;
+  /** The combined base + contextual list, used for shortcut lookup. */
   private definitions: CommandDefinition[] = [];
+
+  /** Always-available commands (look, move, quests, …). */
+  private baseDefinitions: CommandDefinition[] = [];
+  /**
+   * Situational commands shown only when relevant — e.g. Up/Down, which appear
+   * only when the current room has that vertical exit. Replaced per room via
+   * setContextual().
+   */
+  private contextualDefinitions: CommandDefinition[] = [];
 
   /** Called when a command should be sent directly */
   private onCommand: ((command: string) => void) | null = null;
@@ -58,7 +83,7 @@ export class CommandMenu {
 
   /**
    * Renders the menu and wires callbacks.
-   * @param definitions      command list to render
+   * @param definitions      base command list (always shown)
    * @param onCommand        invoked when a no-argument command is chosen
    * @param onNeedsArgument  invoked when an argument-requiring command is chosen
    */
@@ -67,15 +92,37 @@ export class CommandMenu {
     onCommand: (command: string) => void,
     onNeedsArgument: (commandPrefix: string) => void
   ): void {
-    this.definitions = definitions;
+    this.baseDefinitions = definitions;
     this.onCommand = onCommand;
     this.onNeedsArgument = onNeedsArgument;
 
+    this.renderButtons();
+    this.attachKeyListener();
+  }
+
+  /**
+   * Sets the situational commands appended after the base set, re-rendering
+   * only when the set actually changes (cheap to call on every room update).
+   */
+  public setContextual(definitions: CommandDefinition[]): void {
+    const unchanged =
+      definitions.length === this.contextualDefinitions.length &&
+      definitions.every((d, i) => d.command === this.contextualDefinitions[i]?.command);
+    if (unchanged) return;
+
+    this.contextualDefinitions = definitions;
+    this.renderButtons();
+  }
+
+  /** Rebuilds all buttons from base + contextual definitions. */
+  private renderButtons(): void {
+    this.definitions = [...this.baseDefinitions, ...this.contextualDefinitions];
     this.container.innerHTML = "";
 
-    for (const def of definitions) {
+    for (const def of this.definitions) {
       const btn = document.createElement("button");
       btn.className = "cmd-btn";
+      if (this.contextualDefinitions.includes(def)) btn.classList.add("cmd-btn-contextual");
       btn.type = "button";
       btn.textContent = def.shortcut
         ? `${def.label} [${def.shortcut.toUpperCase()}]`
@@ -83,8 +130,6 @@ export class CommandMenu {
       btn.addEventListener("click", () => this.invoke(def));
       this.container.appendChild(btn);
     }
-
-    this.attachKeyListener();
   }
 
   /** Invokes a command definition — sends or requests argument */

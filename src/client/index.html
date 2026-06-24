@@ -12,6 +12,7 @@
   />
 
   <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./menu-intro-fog.css" />
 </head>
 <body>
 
@@ -62,6 +63,11 @@
     <!-- Background atmosphere -->
     <div id="creation-bg">
       <div id="creation-scene-label">The Broken Lantern</div>
+      <!-- Portrait preview — populated during the class step -->
+      <div id="creation-portrait" class="portrait-frame hidden">
+        <div id="creation-portrait-img" class="portrait-img"></div>
+        <div id="creation-portrait-label" class="portrait-label"></div>
+      </div>
     </div>
 
     <!-- Dialogue box — tavern keeper speaks here -->
@@ -97,17 +103,21 @@
   ════════════════════════════════════════ -->
   <div id="screen-game" class="screen hidden">
 
-    <!-- Top bar -->
+    <!-- Top bar: portrait + identity -->
     <header id="game-header" class="snes-panel">
-      <span id="player-name-display">Mournvale</span>
-      <span id="player-class-display"></span>
+      <div id="header-portrait" class="header-portrait"></div>
+      <div id="header-identity">
+        <span id="player-name-display">Mournvale</span>
+        <span id="player-class-display"></span>
+      </div>
     </header>
 
-    <!-- Main content: room + log side by side on wide screens -->
+    <!-- Main content: three columns — Details | Room Image | Log -->
     <div id="game-body">
 
-      <!-- Left panel: room info -->
-      <div id="room-panel" class="snes-panel">
+      <!-- Left column: location info, NPCs, party -->
+      <div id="details-panel" class="snes-panel">
+
         <div class="panel-title">◆ LOCATION</div>
         <div id="room-name" class="room-name-text">—</div>
         <div id="room-description" class="room-desc-text"></div>
@@ -119,14 +129,41 @@
 
         <div class="panel-divider"></div>
 
-        <div class="panel-title">◆ PRESENT</div>
-        <div id="room-players" class="room-players-text">You are alone.</div>
+        <!-- HERE: NPCs at this location only. -->
+        <!-- "No one is here." shown by GameScreen when list is empty. -->
+        <!-- room-players has been removed — party is shown below. -->
+        <div class="panel-title">◆ HERE</div>
+        <div id="room-npcs" class="room-npcs-text"></div>
+
+        <div class="panel-divider"></div>
+
+        <!-- PARTY: always visible, blank when solo. -->
+        <!-- Populated by PartyPanel.update() via GameScreen.updateParty(). -->
+        <div class="panel-title">◆ PARTY</div>
+        <div id="party-panel-container"></div>
+
+        <!-- Character/skills mode — shown in place of the above when the
+             skills screen is open. Rendered by CharacterPanel. -->
+        <div id="character-panel" class="skill-mode"></div>
+
       </div>
 
-      <!-- Right panel: message log -->
+      <!-- Center column: square room image -->
+      <div id="room-image-panel" class="snes-panel">
+        <div class="panel-title">◆ VIEW</div>
+        <div id="room-image" class="room-image"></div>
+
+        <!-- Talent tree mode — portrait preview + class talent tree. -->
+        <div id="talent-panel" class="skill-mode"></div>
+      </div>
+
+      <!-- Right column: message log -->
       <div id="log-panel" class="snes-panel">
         <div class="panel-title">◆ LOG</div>
         <div id="message-log"></div>
+
+        <!-- Ability loadout mode — slots + known abilities. -->
+        <div id="ability-panel" class="skill-mode"></div>
       </div>
 
     </div>
@@ -153,6 +190,30 @@
         <button id="command-send" class="snes-btn">SEND</button>
       </div>
 
+    </div>
+
+    <!-- Quest board overlay — hidden until opened -->
+    <div id="quest-overlay" class="overlay hidden">
+      <div id="quest-board" class="snes-panel overlay-panel">
+        <div class="overlay-header">
+          <span class="panel-title">◆ QUEST BOARD</span>
+          <button id="quest-close-btn" class="snes-btn">✕</button>
+        </div>
+        <div id="quest-active" class="quest-active hidden"></div>
+        <div id="quest-list" class="quest-list"></div>
+      </div>
+    </div>
+
+    <!-- Party invite prompt — hidden until an invite arrives -->
+    <div id="invite-overlay" class="overlay hidden">
+      <div id="invite-prompt" class="snes-panel overlay-panel invite-panel">
+        <div class="panel-title">◆ PARTY INVITE</div>
+        <div id="invite-text" class="invite-text"></div>
+        <div class="invite-actions">
+          <button id="invite-accept-btn" class="snes-btn">ACCEPT</button>
+          <button id="invite-decline-btn" class="snes-btn">DECLINE</button>
+        </div>
+      </div>
     </div>
 
   </div>
