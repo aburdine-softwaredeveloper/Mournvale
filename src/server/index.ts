@@ -39,6 +39,7 @@ import type { SaveStore } from "./persistence/SaveStore";
 import { PartyManager } from "./party/PartyManager";
 import { QuestManager } from "./quest/QuestManager";
 import { worldManager } from "./world/WorldManager";
+import { TOWN_CODEX } from "./world/townCodex";
 import { combatManager, buildPlayerCombatEntity, buildEnemyCombatEntity } from "./combat/CombatManager";
 import type {
   ClientMessage,
@@ -54,6 +55,7 @@ import { NpcChatService } from "./dialogue/NpcChatService";
 import { OllamaBrain } from "./dialogue/OllamaBrain";
 import { ScriptedBrain } from "./dialogue/ScriptedBrain";
 import { inferIntent, skillForIntent, TIER_LABEL } from "./dialogue/NpcBrain";
+import { buildPlayerContext } from "./dialogue/playerContext";
 import {
   newProgression, awardXp, levelForXp,
   spendTalentPoint, spendAttributePoint, equipAbility, unequipSlot, ABILITY_SLOTS,
@@ -706,8 +708,19 @@ function runNpcChat(
   const roomName = rooms[player.roomId!]?.name ?? "Mournvale";
   const playerName = player.character!.name;
 
+  // Live, per-conversation knowledge: the quest the player has actually accepted,
+  // whether they're in a party, and how seasoned they are. Lets the NPC react to
+  // what the player is genuinely doing right now (the giver can ask after their job).
+  const inParty = partyManager.getPartyId(player.id) !== null;
+  const playerContext = buildPlayerContext({
+    npc,
+    activeQuest: questManager.getActive(questOwnerKey(player)),
+    inParty,
+    ...(player.progression ? { level: player.progression.level } : {}),
+  });
+
   void npcChat
-    .respond(player.id, { npc, playerName, playerClass: charClass, message, skill, intent, tier: roll.tier, roomName })
+    .respond(player.id, { npc, playerName, playerClass: charClass, message, skill, intent, tier: roll.tier, roomName, worldContext: TOWN_CODEX, playerContext })
     .then(({ reply }) => {
       // The dice reveal (so the d20 is visible), then the NPC's spoken line.
       sendToPlayer(socket, {

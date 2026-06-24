@@ -88,6 +88,20 @@ async function main(): Promise<void> {
     assert.ok(/evasive|unmoved/i.test(prompt), "folds in the fail-tier tone");
   });
 
+  await check("buildNpcSystemPrompt folds in shared town knowledge when provided", () => {
+    const marta = worldManager.getNpcById("marta")!;
+    const base = ctxFor(marta, "Where's the blacksmith?", "success");
+    // Without worldContext, the codex text is absent…
+    assert.ok(!buildNpcSystemPrompt(base).includes("SHARED LOCAL KNOWLEDGE"));
+    // …with it, the NPC's prompt carries the town layout it can reference.
+    const withWorld = buildNpcSystemPrompt({
+      ...base,
+      worldContext: "SHARED LOCAL KNOWLEDGE — The Iron Hearth is west of Market Square.",
+    });
+    assert.ok(withWorld.includes("The Iron Hearth is west of Market Square"), "embeds the codex");
+    assert.ok(/in your own voice/i.test(withWorld), "instructs the NPC to use it naturally");
+  });
+
   await check("NpcChatService(scripted only) responds and reports the brain", async () => {
     const marta = worldManager.getNpcById("marta")!;
     const service = new NpcChatService([new ScriptedBrain()]);
