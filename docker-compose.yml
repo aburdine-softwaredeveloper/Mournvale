@@ -1,0 +1,27 @@
+# docker-compose.yml — One-command deploy/update for Mournvale.
+#
+#   deploy / update:  docker compose up -d --build
+#   logs:             docker compose logs -f
+#   stop:             docker compose down   (saves are safe — they're on the host)
+#
+# Player saves are bind-mounted from ./saves on the host, so they persist across
+# rebuilds, updates, and `docker compose down`. The container is disposable; the
+# saves are not.
+
+services:
+  mournvale:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      PORT: "3000"
+      # NPC dialogue LLM. host.docker.internal reaches an Ollama running on the
+      # host machine; point this at any reachable Ollama instead if you prefer.
+      OLLAMA_URL: "${OLLAMA_URL:-http://host.docker.internal:11434}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-llama3.2:3b}"
+    extra_hosts:
+      # Lets host.docker.internal resolve on Linux too (native on Mac/Windows).
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./saves:/app/saves
+    restart: unless-stopped

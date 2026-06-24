@@ -40,7 +40,22 @@ import type {
 } from "../types/network";
 import type { TalkIntent } from "../types/npc";
 
-const SERVER_URL = "ws://localhost:3000";
+/**
+ * Resolves the game-server WebSocket URL:
+ *   1. VITE_SERVER_URL override (set it for a custom dev/host target), else
+ *   2. in dev (Vite), the local server on :3000, else
+ *   3. the same origin that served this page — so a deployed build "just works"
+ *      against whatever host/domain it's running on, with wss:// under HTTPS.
+ */
+function resolveServerUrl(): string {
+  const override = import.meta.env.VITE_SERVER_URL;
+  if (override) return override;
+  if (import.meta.env.DEV) return "ws://localhost:3000";
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}`;
+}
+
+const SERVER_URL = resolveServerUrl();
 const PLAYER_ID_KEY = "mournvale.playerId";
 
 /** The four valid talk intents — used to parse the optional second word. */

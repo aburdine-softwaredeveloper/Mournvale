@@ -1,0 +1,55 @@
+name: Deploy to VPS
+
+# Auto-deploys on every push to main. This does NOT host the server — your VPS
+# does (24/7 via PM2). This job just SSHes in and runs the deploy script, which
+# rebuilds the client and gracefully reloads the server. Player saves in ./saves
+# on the VPS are never touched.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   VPS_HOST      — server IP or domain
+#   VPS_USER      — SSH user
+#   VPS_SSH_KEY   — a PRIVATE SSH key whose public half is in the VPS user's
+#                   ~/.ssh/authorized_keys
+#   VPS_APP_DIR   — path to the cloned repo on the VPS (e.g. /home/you/Mournvale)
+#   VPS_SSH_PORT  — optional, defaults to 22
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # also lets you trigger a deploy by hand from the Actions tab
+
+# Never let two deploys run at once; don't cancel one mid-flight.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_USER:-}" ] || [ -z "${VPS_SSH_KEY:-}" ] || [ -z "${VPS_APP_DIR:-}" ]; then
+            echo "::error::Missing required secrets. Set VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_APP_DIR (and optionally VPS_SSH_PORT)."
+            exit 1
+          fi
+
+          PORT="${VPS_SSH_PORT:-22}"
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "$PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Use a login shell (bash -lc) on the VPS so PATH includes node/npm/pm2
+          # (nvm- and global-npm-installed binaries aren't on a non-login PATH).
+          ssh -i ~/.ssh/id_deploy -p "$PORT" "$VPS_USER@$VPS_HOST" \
+            "bash -lc 'cd \"$VPS_APP_DIR\" && git pull --ff-only && ./scripts/deploy.sh'"

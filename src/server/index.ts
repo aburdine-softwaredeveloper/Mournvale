@@ -19,7 +19,10 @@
  */
 
 import { WebSocketServer, WebSocket, RawData } from "ws";
+import { createServer } from "http";
+import * as path from "path";
 import { randomUUID } from "crypto";
+import { createStaticHandler } from "./httpStatic";
 import { handleCommand } from "./commands";
 import { say } from "./commands/say";
 import { broadcastToRoom, sendToPlayer } from "./roomUtils";
@@ -64,8 +67,19 @@ import { buildSkillScreenView } from "./character/skillScreen";
 // SERVER SETUP
 // ─────────────────────────────────────────────
 
-const PORT = 3000;
-const server = new WebSocketServer({ port: PORT });
+/** Port comes from the environment (cloud hosts inject PORT), else 3000. */
+const PORT = Number(process.env["PORT"]) || 3000;
+
+/**
+ * One HTTP server serves the built client (dist/client) AND hosts the
+ * WebSocket — so the whole game lives at a single address/port. Players load
+ * the page from here and the client connects its socket back to the same
+ * origin (see resolveServerUrl in the client). In dev, Vite serves the client
+ * separately and this static dir is simply unused.
+ */
+const CLIENT_DIR = path.resolve(process.cwd(), "dist/client");
+const httpServer = createServer(createStaticHandler(CLIENT_DIR));
+const server = new WebSocketServer({ server: httpServer });
 
 const saveStore: SaveStore = new JsonFileSaveStore();
 const partyManager = new PartyManager();
@@ -99,7 +113,12 @@ const SPEAK_INTENT_VERBS: Record<string, TalkIntent> = {
  */
 const playerSockets = new Map<string, WebSocket>();
 
-console.log(`🏰 Mournvale running on ws://localhost:${PORT}`);
+// Bind all interfaces (0.0.0.0) so the server is reachable from other machines
+// — LAN, a tunnel, or a cloud host — not just localhost.
+httpServer.listen(PORT, () => {
+  console.log(`🏰 Mournvale listening on http://localhost:${PORT}`);
+  console.log(`   Players reach it at http://<this-host>:${PORT} (LAN IP, tunnel, or your domain).`);
+});
 
 // ─────────────────────────────────────────────
 // HELPERS
