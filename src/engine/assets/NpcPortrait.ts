@@ -16,13 +16,14 @@ import type { NpcRole } from "../../types/npc";
 const CANVAS_W = 120;
 const CANVAS_H = 150;
 
-/** Base backdrop shades per role — greyscale, distinguished by darkness. */
+/** Parchment backdrop + sepia silhouette per role — like an inked sketch on
+ *  a page, tinted slightly by role (gold giver, oxblood foe, mossy vendor…). */
 const ROLE_TINT: Record<NpcRole, { top: string; bottom: string; robe: string }> = {
-  questgiver: { top: "#cacaca", bottom: "#9a9a9a", robe: "#6a6a6a" },
-  vendor:     { top: "#c2c2c2", bottom: "#909090", robe: "#5e5e5e" },
-  hostile:    { top: "#b2b2b2", bottom: "#808080", robe: "#4a4a4a" },
-  friendly:   { top: "#cecece", bottom: "#a0a0a0", robe: "#707070" },
-  dialogue:   { top: "#c6c6c6", bottom: "#969696", robe: "#666666" },
+  questgiver: { top: "#e4d0a4", bottom: "#cbb07e", robe: "#5a4326" },
+  vendor:     { top: "#dcd2a2", bottom: "#c2b67e", robe: "#4e4a2c" },
+  hostile:    { top: "#e2c4a2", bottom: "#cda07e", robe: "#5a2e22" },
+  friendly:   { top: "#e0cea4", bottom: "#c8b07e", robe: "#4e4630" },
+  dialogue:   { top: "#ddcaa0", bottom: "#c6ae7c", robe: "#54432a" },
 };
 
 /** Small deterministic hash → 0..1, for stable per-name hue jitter. */
@@ -66,11 +67,11 @@ export function composeNpcPortrait(name: string, role: NpcRole): string {
       // Hood
       `<path d="M30 96 Q30 40 60 38 Q90 40 90 96 Q60 86 30 96 Z" fill="${shade(tint.robe, -18)}"/>` +
       // Head silhouette
-      `<ellipse cx="60" cy="70" rx="22" ry="26" fill="#1f1f1f"/>` +
+      `<ellipse cx="60" cy="70" rx="22" ry="26" fill="#2a2018"/>` +
       // Initial
       `<text x="60" y="80" text-anchor="middle" ` +
         `font-family="'Press Start 2P', monospace" font-size="22" ` +
-        `fill="#f0f0f0">${escapeAttr(initial)}</text>` +
+        `fill="#f0e4c8">${escapeAttr(initial)}</text>` +
     `</svg>`
   );
 }
@@ -92,21 +93,21 @@ export function composePlayerPortrait(name: string): string {
     `style="filter:brightness(${brightness})">` +
       `<defs>` +
         `<linearGradient id="pp-bg" x1="0" y1="0" x2="0" y2="1">` +
-          `<stop offset="0" stop-color="#d0d0d0"/>` +
-          `<stop offset="1" stop-color="#9a9a9a"/>` +
+          `<stop offset="0" stop-color="#e0cda6"/>` +
+          `<stop offset="1" stop-color="#c4ac7c"/>` +
         `</linearGradient>` +
       `</defs>` +
       `<rect x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}" fill="url(#pp-bg)"/>` +
       // Tunic / shoulders (no hood)
-      `<path d="M18 150 Q18 106 60 102 Q102 106 102 150 Z" fill="#5e5e5e"/>` +
+      `<path d="M18 150 Q18 106 60 102 Q102 106 102 150 Z" fill="#5a4632"/>` +
       // Collar
-      `<path d="M44 150 L52 110 L60 122 L68 110 L76 150 Z" fill="#4a4a4a"/>` +
+      `<path d="M44 150 L52 110 L60 122 L68 110 L76 150 Z" fill="#3e3022"/>` +
       // Head
-      `<ellipse cx="60" cy="68" rx="22" ry="26" fill="#1f1f1f"/>` +
+      `<ellipse cx="60" cy="68" rx="22" ry="26" fill="#2a2018"/>` +
       // Initial
       `<text x="60" y="78" text-anchor="middle" ` +
         `font-family="'Press Start 2P', monospace" font-size="22" ` +
-        `fill="#f0f0f0">${escapeAttr(initial)}</text>` +
+        `fill="#f0e4c8">${escapeAttr(initial)}</text>` +
     `</svg>`
   );
 }

@@ -222,8 +222,8 @@ export class CombatScreen {
           hpFill.className = "cs-hp-fill";
           const pct = Math.round((entity.hp / entity.maxHp) * 100);
           hpFill.style.width      = `${pct}%`;
-          // Greyscale: darker = wounded, lighter = healthy.
-          hpFill.style.background = pct <= 30 ? "#2a2a2a" : "#6a6a6a";
+          // Oxblood when wounded, moss when healthy — muted, book-like.
+          hpFill.style.background = pct <= 30 ? "#8a3b2a" : "#5c6442";
           hpWrap.appendChild(hpFill);
 
           token.appendChild(letter);
@@ -459,64 +459,64 @@ export class CombatScreen {
     if (document.getElementById("mournvale-combat-styles")) return;
     const s = document.createElement("style");
     s.id = "mournvale-combat-styles";
-    // Light-mode greyscale to match the rest of the UI. Player vs enemy
-    // tokens are distinguished by shade (and the gold "mine" ring) rather
-    // than hue, keeping the monochrome look readable.
+    // Spellbook theme: a parchment battle-map laid on the dark leather cover.
+    // Tokens read by warm hue (leather ally / oxblood foe, gold "mine" ring);
+    // sidebar panels are parchment pages printed in sepia ink.
     s.textContent = `
-      #cs-root { display:flex; flex-direction:column; height:100%; background:#d8d8d8; color:#222222; font-family:inherit; }
-      #cs-header { display:flex; align-items:center; gap:16px; padding:8px 16px; background:rgba(0,0,0,.06); font-size:13px; border-bottom:1px solid rgba(0,0,0,.15); }
-      #cs-round { font-weight:500; }
-      #cs-phase-label { color:#5a5a5a; }
-      #cs-waiting { margin-left:auto; color:#1a1a1a; font-size:12px; }
+      #cs-root { display:flex; flex-direction:column; height:100%; background:#241f1a; color:#e8dcc0; font-family:inherit; }
+      #cs-header { display:flex; align-items:center; gap:16px; padding:8px 16px; background:rgba(0,0,0,.3); font-size:13px; border-bottom:1px solid rgba(216,184,120,.18); }
+      #cs-round { font-weight:500; color:#e8dcc0; }
+      #cs-phase-label { color:#b8915a; }
+      #cs-waiting { margin-left:auto; color:#d8b878; font-size:12px; }
       #cs-body { display:flex; flex:1; gap:12px; padding:12px; overflow:hidden; }
       #cs-grid-wrap { flex:0 0 auto; overflow:auto; }
-      .cs-cell { width:60px; height:60px; background:#c4c4c4; border:1px solid #9a9a9a; border-radius:4px; display:flex; align-items:center; justify-content:center; position:relative; box-sizing:border-box; }
-      .cell-wall { background:#a4a4a4; border-color:#8a8a8a; }
-      .cell-move { background:rgba(0,0,0,.10); border-color:#4a4a4a; cursor:pointer; }
-      .cell-move:hover { background:rgba(0,0,0,.18); }
-      .cell-attack { background:rgba(0,0,0,.22); border-color:#1a1a1a; cursor:crosshair; }
-      .cell-attack:hover { background:rgba(0,0,0,.32); }
-      .cell-planned { border:2px dashed #1a1a1a; }
+      .cs-cell { width:60px; height:60px; background:#c9b489; border:1px solid #8a6f48; border-radius:4px; display:flex; align-items:center; justify-content:center; position:relative; box-sizing:border-box; }
+      .cell-wall { background:#6e5836; border-color:#5a4630; }
+      .cell-move { background:rgba(92,100,66,.34); border-color:#5c6442; cursor:pointer; }
+      .cell-move:hover { background:rgba(92,100,66,.5); }
+      .cell-attack { background:rgba(138,59,42,.3); border-color:#8a3b2a; cursor:crosshair; }
+      .cell-attack:hover { background:rgba(138,59,42,.45); }
+      .cell-planned { border:2px dashed #8a5a2c; }
       .cs-token { width:50px; height:50px; border-radius:50%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border:2px solid transparent; }
-      .cs-token-player { background:#5a5a5a; border-color:#2a2a2a; }
-      .cs-token-enemy  { background:#1f1f1f; border-color:#000000; }
-      .cs-token-mine   { border-color:#000000; box-shadow:0 0 0 2px #ffffff inset; }
+      .cs-token-player { background:#6e5230; border-color:#a07a44; }
+      .cs-token-enemy  { background:#5a2e22; border-color:#8a3b2a; }
+      .cs-token-mine   { border-color:#d8b878; box-shadow:0 0 0 2px rgba(216,184,120,.4) inset; }
       .cs-token-dead   { opacity:.3; filter:grayscale(1); }
-      .cs-token-letter { font-size:18px; font-weight:500; color:#fff; line-height:1; }
-      .cs-hp-wrap { width:38px; height:4px; background:rgba(0,0,0,.35); border-radius:2px; overflow:hidden; }
+      .cs-token-letter { font-size:18px; font-weight:500; color:#f0e4c8; line-height:1; }
+      .cs-hp-wrap { width:38px; height:4px; background:rgba(0,0,0,.4); border-radius:2px; overflow:hidden; }
       .cs-hp-fill { height:100%; border-radius:2px; transition:width .3s; }
       #cs-sidebar { width:200px; flex-shrink:0; display:flex; flex-direction:column; gap:8px; overflow-y:auto; }
-      .cs-panel { background:rgba(0,0,0,.05); border-radius:8px; padding:10px; }
+      .cs-panel { background:#dac7a2; color:#3b2f20; border:1px solid #7a6344; border-radius:8px; padding:10px; }
       .cs-panel-log { flex:1; display:flex; flex-direction:column; min-height:0; }
-      .cs-panel-title { font-size:11px; color:#5a5a5a; margin-bottom:6px; }
+      .cs-panel-title { font-size:11px; color:#6e5c42; margin-bottom:6px; }
       .cs-init-row { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:12px; }
       .cs-init-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .cs-init-hp { font-size:11px; color:#5a5a5a; }
-      .cs-init-badge { font-size:11px; background:rgba(0,0,0,.10); padding:1px 5px; border-radius:3px; }
-      .cs-init-dead { opacity:.35; text-decoration:line-through; }
-      .cs-init-mine { color:#1a1a1a; font-weight:500; }
-      .cs-btn { display:block; width:100%; padding:7px 10px; margin-bottom:5px; background:rgba(0,0,0,.06); border:1px solid rgba(0,0,0,.20); border-radius:6px; color:#222222; cursor:pointer; font-size:12px; text-align:left; transition:background .1s; }
-      .cs-btn:hover:not([disabled]) { background:rgba(0,0,0,.13); }
-      .cs-btn[disabled] { opacity:.35; cursor:not-allowed; }
-      .cs-btn-active { border-color:#1a1a1a; color:#1a1a1a; }
-      .cs-btn-confirm { border-color:#1a1a1a; color:#1a1a1a; margin-top:8px; }
-      .cs-plan-summary { font-size:11px; color:#5a5a5a; padding:3px 0; }
-      .cs-muted { font-size:12px; color:#5a5a5a; margin:0; }
+      .cs-init-hp { font-size:11px; color:#6e5c42; }
+      .cs-init-badge { font-size:11px; background:rgba(90,58,28,.14); padding:1px 5px; border-radius:3px; }
+      .cs-init-dead { opacity:.4; text-decoration:line-through; }
+      .cs-init-mine { color:#5a3a1c; font-weight:500; }
+      .cs-btn { display:block; width:100%; padding:7px 10px; margin-bottom:5px; background:#c8b485; border:1px solid #7a6344; border-radius:6px; color:#3b2f20; cursor:pointer; font-size:12px; text-align:left; transition:background .1s; }
+      .cs-btn:hover:not([disabled]) { background:#bda36f; }
+      .cs-btn[disabled] { opacity:.4; cursor:not-allowed; }
+      .cs-btn-active { border-color:#8a5a2c; color:#5a3a1c; }
+      .cs-btn-confirm { border-color:#5c6442; color:#4a5232; margin-top:8px; }
+      .cs-plan-summary { font-size:11px; color:#6e5c42; padding:3px 0; }
+      .cs-muted { font-size:12px; color:#6e5c42; margin:0; }
       #cs-log { overflow-y:auto; flex:1; font-size:11px; line-height:1.7; }
-      .cs-log-entry { border-bottom:1px solid rgba(0,0,0,.08); padding:1px 0; }
-      .cs-log-entity_dies { color:#1a1a1a; font-weight:500; }
-      .cs-log-attack_crit { color:#1a1a1a; font-weight:500; }
-      .cs-log-attack_hit  { color:#333333; }
-      .cs-log-attack_miss { color:#8a8a8a; }
-      .cs-log-heal        { color:#4a4a4a; }
-      .cs-log-burn_damage { color:#3a3a3a; }
-      .cs-log-combat_ends { color:#1a1a1a; font-weight:500; }
-      .cs-end-overlay { position:absolute; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:10; }
-      .cs-end-card { background:#d4d4d4; border:1px solid #8a8a8a; border-radius:12px; padding:32px 40px; text-align:center; }
-      .cs-end-title { margin:0 0 8px; font-size:22px; font-weight:500; color:#1a1a1a; }
-      .cs-end-body  { margin:0 0 20px; color:#5a5a5a; font-size:14px; }
-      #cs-return-btn { padding:10px 24px; background:#4a4a4a; border:none; border-radius:6px; color:#fff; cursor:pointer; font-size:14px; }
-      #cs-return-btn:hover { background:#2a2a2a; }
+      .cs-log-entry { border-bottom:1px solid rgba(90,58,28,.12); padding:1px 0; }
+      .cs-log-entity_dies { color:#8a3b2a; font-weight:500; }
+      .cs-log-attack_crit { color:#8a5a2c; font-weight:500; }
+      .cs-log-attack_hit  { color:#3b2f20; }
+      .cs-log-attack_miss { color:#9a8866; }
+      .cs-log-heal        { color:#5c6442; }
+      .cs-log-burn_damage { color:#8a5a2c; }
+      .cs-log-combat_ends { color:#5a3a1c; font-weight:500; }
+      .cs-end-overlay { position:absolute; inset:0; background:rgba(20,12,6,.6); display:flex; align-items:center; justify-content:center; z-index:10; }
+      .cs-end-card { background:#dac7a2; border:2px solid #8a5a2c; border-radius:12px; padding:32px 40px; text-align:center; }
+      .cs-end-title { margin:0 0 8px; font-size:22px; font-weight:500; color:#5a3a1c; }
+      .cs-end-body  { margin:0 0 20px; color:#6e5c42; font-size:14px; }
+      #cs-return-btn { padding:10px 24px; background:#6e5230; border:none; border-radius:6px; color:#f0e4c8; cursor:pointer; font-size:14px; }
+      #cs-return-btn:hover { background:#5a3a1c; }
     `;
     document.head.appendChild(s);
   }

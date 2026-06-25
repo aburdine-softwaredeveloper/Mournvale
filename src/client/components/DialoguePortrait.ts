@@ -18,7 +18,9 @@
 
 type Side = "left" | "right";
 
-const HOLD_MS = 6000;
+/** How long a portrait stays before sliding out. Generous so it survives a
+ *  slow NPC reply (the LLM brain can take several seconds to respond). */
+const HOLD_MS = 9000;
 
 interface Slot {
   wrap: HTMLElement;

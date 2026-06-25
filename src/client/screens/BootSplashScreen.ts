@@ -141,12 +141,12 @@ export class BootSplashScreen {
     const H = this.canvas.height;
     this.frame++;
 
-    // Overcast light-grey sky wash (light mode).
+    // Dark sepia storm over the leather cover.
     ctx.clearRect(0, 0, W, H);
     const sky = ctx.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, "#d2d2d2");
-    sky.addColorStop(0.55, "#c0c0c0");
-    sky.addColorStop(1, "#aeaeae");
+    sky.addColorStop(0, "#2c2218");
+    sky.addColorStop(0.55, "#231a12");
+    sky.addColorStop(1, "#181009");
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, W, H);
 
@@ -164,7 +164,7 @@ export class BootSplashScreen {
       const k = this.flashFrames / this.flashPeak; // 1 → 0
       // A double-blink feels more like real lightning.
       const blink = 0.55 + 0.45 * Math.abs(Math.sin(this.flashFrames * 0.9));
-      ctx.fillStyle = `rgba(255,255,255,${0.5 * k * blink})`;
+      ctx.fillStyle = `rgba(255,232,180,${0.42 * k * blink})`;
       ctx.fillRect(0, 0, W, H);
       this.flashFrames--;
     }
@@ -199,9 +199,9 @@ export class BootSplashScreen {
       // Dark grey storm clouds so they read against the light sky; lightning
       // (the white flash overlay) brightens the whole scene momentarily.
       const base = c.alpha + lit * 0.12;
-      g.addColorStop(0, `rgba(95,95,95,${base})`);
-      g.addColorStop(0.6, `rgba(120,120,120,${base * 0.45})`);
-      g.addColorStop(1, "rgba(150,150,150,0)");
+      g.addColorStop(0, `rgba(70,54,34,${base})`);
+      g.addColorStop(0.6, `rgba(96,74,46,${base * 0.45})`);
+      g.addColorStop(1, "rgba(120,95,60,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -218,7 +218,7 @@ export class BootSplashScreen {
     const step = endY / segments;
 
     ctx.save();
-    ctx.strokeStyle = "rgba(50,50,50,0.85)";
+    ctx.strokeStyle = "rgba(240,210,150,0.9)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(x, y);

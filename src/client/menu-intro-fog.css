@@ -9,13 +9,13 @@
 #screen-menu {
   position: relative;
   overflow: hidden;
-  background: #ececec;
+  background: #241f1a;
 }
 
 #screen-intro {
   position: relative;
   overflow: hidden;
-  background: #ececec;
+  background: #241f1a;
 }
 
 /* â”€â”€ Fog canvas sits behind everything â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -50,7 +50,7 @@
   background: radial-gradient(
     ellipse 80% 70% at 50% 50%,
     transparent 30%,
-    rgba(120, 120, 120, 0.45) 100%
+    rgba(10, 6, 3, 0.6) 100%
   );
 }
 

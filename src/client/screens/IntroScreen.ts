@@ -197,9 +197,9 @@ export class IntroScreen {
     for (const p of this.fogParticles) {
       // Draw
       const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius);
-      grad.addColorStop(0,   `rgba(110,110,110,${p.alpha})`);
-      grad.addColorStop(0.6, `rgba(140,140,140,${p.alpha * 0.4})`);
-      grad.addColorStop(1,   "rgba(160,160,160,0)");
+      grad.addColorStop(0,   `rgba(150,120,80,${p.alpha})`);
+      grad.addColorStop(0.6, `rgba(110,86,54,${p.alpha * 0.4})`);
+      grad.addColorStop(1,   "rgba(70,54,34,0)");
 
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);

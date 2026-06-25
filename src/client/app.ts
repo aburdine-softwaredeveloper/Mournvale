@@ -176,7 +176,7 @@ class MournvaleClient {
       inset:       "0",
       zIndex:      "100",
       display:     "none",
-      background:  "#d8d8d8",
+      background:  "#241f1a",
     });
     document.body.appendChild(div);
     this.combatContainer = div;

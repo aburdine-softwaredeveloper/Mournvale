@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mournvale-preview",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "PORT=3002 npx tsx src/server/index.ts"],
+      "port": 3002
+    }
+  ]
+}

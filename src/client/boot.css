@@ -8,7 +8,7 @@
   overflow: hidden;
   justify-content: center;
   align-items: center;
-  background: #aeaeae;
+  background: #241f1a;
   cursor: pointer;
 }
 
@@ -32,7 +32,7 @@
   background: radial-gradient(
     ellipse 75% 65% at 50% 45%,
     transparent 30%,
-    rgba(120, 120, 120, 0.5) 100%
+    rgba(10, 6, 3, 0.62) 100%
   );
 }
 
@@ -51,11 +51,11 @@
   font-family: var(--font-pixel);
   font-size: 34px;
   letter-spacing: 9px;
-  color: var(--color-text-gold, #111111);
+  color: #d8b878;
   /* Embossed dark ink on the pale storm sky. */
   text-shadow:
-    2px 2px 0 #ffffff,
-    3px 3px 0 var(--color-border, #8a8a8a);
+    1px 1px 0 #1a140e,
+    2px 2px 3px rgba(0,0,0,0.6);
   opacity: 0;
 }
 
@@ -63,7 +63,7 @@
   font-family: var(--font-pixel);
   font-size: 8px;
   letter-spacing: 2px;
-  color: var(--color-border-gold, #b09a6a);
+  color: #b8915a;
   opacity: 0;
 }
 
@@ -71,7 +71,7 @@
   font-family: var(--font-pixel);
   font-size: 9px;
   letter-spacing: 2px;
-  color: var(--color-text, #e0e0e0);
+  color: #e8dcc0;
   margin-top: 14px;
   opacity: 0;
 }

@@ -3,9 +3,10 @@
  *
  * Static world data, moved out of gameState.ts so content lives apart
  * from live session state. Each room has an artKey resolved to
- * /assets/tiles/{artKey} by the AssetRegistry — currently grayscale SVG
- * placeholders. To swap a room to raster art, drop in a PNG and add the
- * extension to its artKey (e.g. "tavern.png"); no other code changes.
+ * /assets/tiles/{artKey}.png by the AssetRegistry (PNG is the default
+ * format). The shipped tiles are greyscale placeholders — to use your own
+ * pixel art, just overwrite public/assets/tiles/{artKey}.png. No code
+ * changes needed; bare artKeys already resolve to PNG.
  *
  * Layout:
  *                       [chapel]
