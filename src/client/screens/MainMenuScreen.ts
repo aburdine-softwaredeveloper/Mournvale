@@ -213,9 +213,9 @@ export class MainMenuScreen {
         if (cx + puffW < 0 || cx - puffW > W) continue;
 
         const grad = ctx.createRadialGradient(cx, y, 0, cx, y, puffW);
-        grad.addColorStop(0,   `rgba(160,160,180,${layer.alpha})`);
-        grad.addColorStop(0.5, `rgba(120,120,150,${layer.alpha * 0.5})`);
-        grad.addColorStop(1,   "rgba(80,80,100,0)");
+        grad.addColorStop(0,   `rgba(120,120,120,${layer.alpha})`);
+        grad.addColorStop(0.5, `rgba(140,140,140,${layer.alpha * 0.5})`);
+        grad.addColorStop(1,   "rgba(170,170,170,0)");
 
         ctx.save();
         ctx.scale(1, puffH / puffW);   // squash to ellipse

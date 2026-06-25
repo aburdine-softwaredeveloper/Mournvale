@@ -25,6 +25,7 @@
  */
 
 import { ScreenManager } from "./screens/ScreenManager";
+import { BootSplashScreen } from "./screens/BootSplashScreen";
 import { MainMenuScreen } from "./screens/MainMenuScreen";
 import { IntroScreen } from "./screens/IntroScreen";
 import { CharacterCreationScreen } from "./screens/CharacterCreationScreen";
@@ -65,6 +66,7 @@ class MournvaleClient {
   private socket: WebSocket | null = null;
 
   private readonly screens = new ScreenManager();
+  private readonly boot = new BootSplashScreen();
   private readonly menu = new MainMenuScreen();
   private readonly intro = new IntroScreen();
   private readonly creation = new CharacterCreationScreen();
@@ -101,9 +103,13 @@ class MournvaleClient {
 
   public start(): void {
     this.playerId = this.loadOrCreatePlayerId();
-    this.screens.show("menu");
-    // Defer fog start one frame so #screen-menu has its full painted dimensions
-    requestAnimationFrame(() => this.menu.startFog());
+
+    // Game Boy Color style boot splash plays first, then reveals the title
+    // menu. The socket connects underneath so slots are ready by the time
+    // the player finishes the splash.
+    this.screens.show("boot");
+    this.boot.start(() => this.enterMenu());
+
     this.connect();
     this.buildCombatContainer();
 
@@ -144,6 +150,15 @@ class MournvaleClient {
     });
   }
 
+  /**
+   * Reveals the title menu after the boot splash finishes. Defers the fog
+   * start one frame so #screen-menu has its full painted dimensions.
+   */
+  private enterMenu(): void {
+    this.screens.show("menu");
+    requestAnimationFrame(() => this.menu.startFog());
+  }
+
   // ─────────────────────────────────────────────
   // COMBAT OVERLAY
   // ─────────────────────────────────────────────
@@ -161,7 +176,7 @@ class MournvaleClient {
       inset:       "0",
       zIndex:      "100",
       display:     "none",
-      background:  "#0f172a",
+      background:  "#d8d8d8",
     });
     document.body.appendChild(div);
     this.combatContainer = div;
@@ -278,6 +293,14 @@ class MournvaleClient {
         this.game.log(`${msg.payload.speaker}: ${msg.payload.message}`, "chat");
         break;
 
+      case "speaker_portrait":
+        this.game.showSpeakerPortrait(
+          msg.payload.name,
+          msg.payload.role,
+          msg.payload.side
+        );
+        break;
+
       case "player_presence": {
         const verb = msg.payload.event === "entered" ? "enters" : "leaves";
         this.game.log(`${msg.payload.playerName} ${verb} the room.`, "presence");
@@ -312,6 +335,9 @@ class MournvaleClient {
       // ── Phase 2: NPC interaction with optional skill check display ─────────
       case "npc_interaction": {
         const npc = msg.payload;
+
+        // Conversation portraits are driven by the server's speaker_portrait
+        // message (so they're multiplayer-correct), not from here.
 
         // Roll reveal — shown when the player used a talk intent
         if (npc.checkDisplay) {
@@ -522,6 +548,9 @@ class MournvaleClient {
       }
 
       default:
+        // `say` and everything else flow to the server. Conversation
+        // portraits come back via speaker_portrait — the speaker never sees
+        // their own, only the other players in the room do.
         this.send({ type: "command", payload: { input: trimmed } });
     }
   }

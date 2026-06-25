@@ -13,14 +13,28 @@
 
   <link rel="stylesheet" href="./style.css" />
   <link rel="stylesheet" href="./menu-intro-fog.css" />
+  <link rel="stylesheet" href="./boot.css" />
 </head>
 <body>
+
+  <!-- ═══════════════════════════════════════
+       BOOT SPLASH SCREEN
+       Game Boy Color style power-on: stormy sky,
+       title drop, year stamp. Skippable. Shown first.
+  ════════════════════════════════════════ -->
+  <div id="screen-boot" class="screen screen-active">
+    <div id="boot-content">
+      <div id="boot-title">MOURNVALE</div>
+      <div id="boot-stamp">© 2026 &nbsp;·&nbsp; aburdine.softwaredeveloper</div>
+      <div id="boot-prompt" class="blink">▸ PRESS START</div>
+    </div>
+  </div>
 
   <!-- ═══════════════════════════════════════
        MAIN MENU SCREEN
        New Game / Load Game + 5-slot picker
   ════════════════════════════════════════ -->
-  <div id="screen-menu" class="screen screen-active">
+  <div id="screen-menu" class="screen hidden">
     <div id="menu-content">
 
       <div id="menu-title">MOURNVALE</div>

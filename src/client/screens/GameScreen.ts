@@ -24,11 +24,13 @@ import { PartyPanel } from "../components/PartyPanel";
 import { CharacterPanel } from "../components/CharacterPanel";
 import { TalentTreePanel } from "../components/TalentTreePanel";
 import { AbilityListPanel } from "../components/AbilityListPanel";
+import { DialoguePortrait } from "../components/DialoguePortrait";
 import { assetRegistry } from "../../engine/assets/AssetRegistry";
 import {
   portraitCompositor,
   type PortraitSpec,
 } from "../../engine/assets/PortraitCompositor";
+import { composeNpcPortrait, composePlayerPortrait } from "../../engine/assets/NpcPortrait";
 import type { RoomMessage, SkillScreenView } from "../../types/network";
 import type { PartyView } from "../../types/party";
 import type { NpcView, NpcRole, TalkIntent } from "../../types/npc";
@@ -66,6 +68,9 @@ export class GameScreen {
   private readonly roomExits: HTMLElement;
   private readonly roomNpcs: HTMLElement;
   private readonly roomImage: HTMLElement;
+  /** Child of roomImage that holds the actual art (kept separate from the
+   * dialogue-portrait overlay so art swaps don't wipe the portraits). */
+  private readonly roomImageArt: HTMLElement;
 
   // Log + input
   private readonly messageLog: HTMLElement;
@@ -75,7 +80,11 @@ export class GameScreen {
   // Sub-components
   private readonly commandMenu: CommandMenu;
   private readonly partyPanel: PartyPanel;
+  private readonly dialoguePortrait: DialoguePortrait;
   private onCommand: ((input: string) => void) | null = null;
+
+  /** The local player's identity, used to label their own dialogue portrait. */
+  private playerName = "You";
 
   // Character/skills screen — repurposes the three panels in place
   private readonly characterPanel: CharacterPanel;
@@ -113,6 +122,13 @@ export class GameScreen {
 
     this.commandMenu = new CommandMenu("command-buttons");
     this.partyPanel  = new PartyPanel();
+
+    // Room art renders into its own child so it can be replaced freely
+    // (innerHTML swaps) without destroying the portrait layer that overlays it.
+    this.roomImageArt = document.createElement("div");
+    this.roomImageArt.className = "room-image-art";
+    this.roomImage.appendChild(this.roomImageArt);
+    this.dialoguePortrait = new DialoguePortrait(this.roomImage);
 
     // Character/skills panels (hidden until openSkillScreen)
     this.characterPanel   = new CharacterPanel("character-panel");
@@ -184,6 +200,7 @@ export class GameScreen {
     onCommand: (input: string) => void
   ): void {
     this.onCommand = onCommand;
+    this.playerName = playerName;
     this.headerName.textContent  = playerName;
     this.headerClass.textContent = playerClass.toUpperCase();
     this.portraitSpec = portraitSpec;
@@ -215,6 +232,32 @@ export class GameScreen {
     this.expandedNpcId = null;
     this.renderNpcs(npcs);
     this.updateRoomImage(artKey);
+
+    // Leaving a room ends any in-progress conversation portraits.
+    this.dialoguePortrait.hideAll();
+  }
+
+  // ─────────────────────────────────────────────
+  // DIALOGUE PORTRAITS
+  // ─────────────────────────────────────────────
+
+  /**
+   * Slides a conversation portrait in, as directed by the server's
+   * `speaker_portrait` message. The server decides who sees what — a speaker
+   * never gets their own portrait, only the other room players do:
+   *   • an NPC you address                → role = its NpcRole, side "left"
+   *   • a fellow player addressing an NPC  → role "player", side "right"
+   *   • a fellow player speaking to the room → role "player", side "left"
+   */
+  public showSpeakerPortrait(
+    name: string,
+    role: NpcRole | "player",
+    side: "left" | "right"
+  ): void {
+    const svg = role === "player"
+      ? composePlayerPortrait(name)
+      : composeNpcPortrait(name, role);
+    this.dialoguePortrait.show(side, svg, name);
   }
 
   /**
@@ -371,7 +414,7 @@ export class GameScreen {
     this.currentArtKey = artKey ?? null;
 
     if (!artKey) {
-      this.roomImage.innerHTML = '<div class="room-image-empty">— no view —</div>';
+      this.roomImageArt.innerHTML = '<div class="room-image-empty">— no view —</div>';
       return;
     }
 
@@ -386,18 +429,18 @@ export class GameScreen {
     // SVG art is fetched as text and injected inline (themeable).
     const cached = assetRegistry.get(key);
     if (cached) {
-      this.roomImage.innerHTML = cached;
+      this.roomImageArt.innerHTML = cached;
       return;
     }
 
     void assetRegistry
       .load(key)
       .then((content) => {
-        if (this.currentArtKey === artKey) this.roomImage.innerHTML = content;
+        if (this.currentArtKey === artKey) this.roomImageArt.innerHTML = content;
       })
       .catch(() => {
         if (this.currentArtKey === artKey) {
-          this.roomImage.innerHTML = '<div class="room-image-empty">— no view —</div>';
+          this.roomImageArt.innerHTML = '<div class="room-image-empty">— no view —</div>';
         }
       });
   }
@@ -410,11 +453,11 @@ export class GameScreen {
     img.className = "room-image-png";
     img.onerror   = () => {
       if (this.currentArtKey === artKey) {
-        this.roomImage.innerHTML = '<div class="room-image-empty">— no view —</div>';
+        this.roomImageArt.innerHTML = '<div class="room-image-empty">— no view —</div>';
       }
     };
-    this.roomImage.innerHTML = "";
-    this.roomImage.appendChild(img);
+    this.roomImageArt.innerHTML = "";
+    this.roomImageArt.appendChild(img);
   }
 
   // ─────────────────────────────────────────────

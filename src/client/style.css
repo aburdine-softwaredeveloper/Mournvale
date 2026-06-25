@@ -24,29 +24,32 @@
 }
 
 :root {
-  /* Game Boy Pocket grayscale palette */
-  --color-bg:           #0f0f0f;
-  --color-bg-panel:     #1c1c1c;
-  --color-bg-panel-alt: #262626;
-  --color-border:       #5a5a5a;
-  --color-border-light: #8a8a8a;
-  --color-border-gold:  #b0b0b0;
+  /* Game Boy "light mode" greyscale palette — a pale LCD look: light grey
+     surfaces with dark ink for text/borders. Variable names are preserved
+     from the original grayscale theme so the whole UI recolors here. The
+     "gold"/accent vars become the darkest inks (used for emphasis). */
+  --color-bg:           #e4e4e4;
+  --color-bg-panel:     #d4d4d4;
+  --color-bg-panel-alt: #c6c6c6;
+  --color-border:       #8a8a8a;
+  --color-border-light: #4a4a4a;
+  --color-border-gold:  #2a2a2a;
 
-  --color-text:         #e0e0e0;
-  --color-text-dim:     #8a8a8a;
-  --color-text-gold:    #d8d8d8;
-  --color-text-system:  #b0b0b0;
-  --color-text-chat:    #ffffff;
-  --color-text-error:   #c0c0c0;
-  --color-text-presence:#9a9a9a;
+  --color-text:         #222222;
+  --color-text-dim:     #6a6a6a;
+  --color-text-gold:    #111111;
+  --color-text-system:  #444444;
+  --color-text-chat:    #000000;
+  --color-text-error:   #5a5a5a;
+  --color-text-presence:#555555;
 
-  --color-btn-bg:       #2e2e2e;
-  --color-btn-border:   #6a6a6a;
-  --color-btn-hover-bg: #3e3e3e;
-  --color-btn-active:   #b0b0b0;
+  --color-btn-bg:       #cccccc;
+  --color-btn-border:   #888888;
+  --color-btn-hover-bg: #bcbcbc;
+  --color-btn-active:   #2a2a2a;
 
-  --color-cursor:       #e0e0e0;
-  --color-selection:    #3e3e3e;
+  --color-cursor:       #111111;
+  --color-selection:    #b0b0b0;
 
   --font-pixel: 'Press Start 2P', monospace;
 
@@ -120,7 +123,7 @@ html, body {
 
 #screen-menu {
   /* position: relative is set by menu-intro-fog.css for the canvas */
-  background: #0a0608;
+  background: #ececec;
   justify-content: center;
   align-items: center;
 }
@@ -141,7 +144,8 @@ html, body {
   color: var(--color-text-gold);
   font-size: 28px;
   letter-spacing: 8px;
-  text-shadow: 3px 3px 0 #000, 4px 4px 0 var(--color-border);
+  /* Embossed look for dark ink on a light surface. */
+  text-shadow: 2px 2px 0 #ffffff, 3px 3px 0 var(--color-border);
   margin-bottom: 0;
 }
 
@@ -230,7 +234,7 @@ html, body {
 }
 
 .snes-btn-danger:hover {
-  background: #383838;
+  background: #b8b8b8;
   border-color: var(--color-text-error);
 }
 
@@ -336,7 +340,7 @@ html, body {
       var(--color-bg-panel) 31px,
       var(--color-bg-panel) 32px
     );
-  background-color: #161616;
+  background-color: #d8d8d8;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -536,6 +540,97 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Anchor for the sliding dialogue-portrait layer. */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Art fills the room-image box; the portrait layer overlays it. */
+.room-image-art {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.room-image-art svg,
+.room-image-art .room-image-png {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* ── Sliding dialogue portraits (over the room image) ── */
+
+.dlg-portrait-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.dlg-portrait {
+  position: absolute;
+  bottom: 0;
+  width: 42%;
+  max-width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  /* Hidden off-screen until .dlg-portrait-in is applied. */
+  transition: transform 280ms steps(7), opacity 280ms steps(7);
+  opacity: 0;
+}
+
+.dlg-portrait-left  { left: 4px;  transform: translateX(-130%); }
+.dlg-portrait-right { right: 4px; transform: translateX(130%); }
+
+.dlg-portrait.dlg-portrait-in {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.dlg-portrait-frame {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  background: var(--color-bg-panel);
+  border: var(--border-width) solid var(--color-border-gold);
+  outline: var(--border-width) solid var(--color-bg);
+  outline-offset: -4px;
+  image-rendering: pixelated;
+  overflow: hidden;
+}
+
+.dlg-portrait-frame svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.dlg-portrait-name {
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: var(--color-text-gold);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  padding: 2px 5px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dlg-portrait { transition: opacity 120ms linear; }
+  .dlg-portrait-left, .dlg-portrait-right { transform: none; }
 }
 
 .room-image svg,
@@ -925,7 +1020,7 @@ html, body {
 }
 
 .npc-wrapper-open {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(0, 0, 0, 0.22);
 }
 
 .npc-row {
@@ -939,11 +1034,11 @@ html, body {
 }
 
 .npc-row:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.07);
 }
 
 .npc-wrapper-open .npc-row {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.07);
 }
 
 .npc-name {
@@ -1009,7 +1104,7 @@ html, body {
 }
 
 .npc-intent-fight:hover {
-  background: #2a1515;
+  background: #c0c0c0;
   border-color: var(--color-text-error);
   color: var(--color-text-error);
 }

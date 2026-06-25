@@ -570,6 +570,18 @@ function handleTalk(
     },
   });
 
+  // Conversation portraits: actor sees the NPC from the left; other room
+  // players see the actor slide in from the right.
+  sendToPlayer(socket, {
+    type: "speaker_portrait",
+    payload: { name: npc.name, role: npc.role, side: "left" },
+  });
+  broadcastToRoom(
+    player.roomId,
+    { type: "speaker_portrait", payload: { name: player.character?.name ?? "Adventurer", role: "player", side: "right" } },
+    player.id
+  );
+
   // Apply side effects from the outcome (quest unlocks handled by view questIds)
   // Future: handle standing changes (hostile NPC standing, etc.)
 }
@@ -669,8 +681,15 @@ function handleSpeakCommand(player: Player, socket: WebSocket, input: string): b
     return true;
   }
 
-  // Otherwise it's room/party chat — broadcast the whole line.
+  // Otherwise it's room/party chat — broadcast the whole line. Other players
+  // in the room also see the speaker's portrait slide in from the left; the
+  // speaker themselves sees no portrait (their own line isn't echoed back).
   const response = say(player.id, rest);
+  broadcastToRoom(
+    player.roomId,
+    { type: "speaker_portrait", payload: { name: player.character.name, role: "player", side: "left" } },
+    player.id
+  );
   if (response) sendToPlayer(socket, { type: "system", payload: { message: response } });
   return true;
 }
@@ -704,6 +723,18 @@ function runNpcChat(
 
   // Acknowledge immediately so the player isn't staring at a blank pause.
   sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} considers your words…` } });
+
+  // Conversation portraits: the speaker sees the NPC slide in from the left;
+  // everyone else in the room sees the speaker slide in from the right.
+  sendToPlayer(socket, {
+    type: "speaker_portrait",
+    payload: { name: npc.name, role: npc.role, side: "left" },
+  });
+  broadcastToRoom(
+    player.roomId!,
+    { type: "speaker_portrait", payload: { name: player.character!.name, role: "player", side: "right" } },
+    player.id
+  );
 
   const roomName = rooms[player.roomId!]?.name ?? "Mournvale";
   const playerName = player.character!.name;
