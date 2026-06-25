@@ -76,14 +76,14 @@
   --font-pixel: 'Press Start 2P', monospace;
 
   --panel-gap: 4px;
-  --panel-pad: 12px;
+  --panel-pad: 24px;
   --border-width: 2px;
 
   /* Torn-paper mask: a rectangle whose edges are eaten away by high-frequency
      turbulence, giving sharp, cut-in/nibbled aged edges (not smooth waves) —
      the leather shows through the bites. Stretched per-panel via
      mask-size:100% 100%, so the erosion stays proportional at any size. */
-  --torn-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320' preserveAspectRatio='none'%3E%3Cfilter id='t'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.09 0.07' numOctaves='4' seed='11' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='13'/%3E%3C/filter%3E%3Crect x='9' y='9' width='302' height='302' rx='1' fill='%23fff' filter='url(%23t)'/%3E%3C/svg%3E");
+  --torn-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320' preserveAspectRatio='none'%3E%3Cfilter id='t'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.09 0.07' numOctaves='4' seed='11' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='4'/%3E%3C/filter%3E%3Crect x='4' y='4' width='312' height='312' rx='1' fill='%23fff' filter='url(%23t)'/%3E%3C/svg%3E");
 }
 
 html, body {
@@ -493,7 +493,8 @@ html, body {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: var(--panel-gap);
-  padding: var(--panel-gap);
+  /* Inset the whole UI from the window edges so nothing rides the screen edge. */
+  padding: 12px 18px;
   height: 100vh;
   overflow: hidden;
 }
@@ -505,7 +506,18 @@ html, body {
   justify-content: flex-start;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 8px 18px;
+}
+
+/* The wide chrome bars (header, command menu, input bar) are too short-and-wide
+   for the stretched torn-mask — its horizontal erosion would scale with width
+   and clip the portrait / buttons / SEND. Keep them as clean parchment strips
+   (no torn mask) so their content never gets cut off, at any window width. */
+#game-header,
+#command-menu,
+#input-panel {
+  -webkit-mask: none;
+  mask: none;
 }
 
 .header-portrait {
@@ -546,38 +558,51 @@ html, body {
 
 #game-body {
   display: grid;
-  /* details | room illustration | book binding | log */
-  grid-template-columns: 1fr 1.1fr 22px 1fr;
+  /* a left "notes" page (details) + the open-book spread (illustration | log) */
+  grid-template-columns: 1fr 2.3fr;
   gap: var(--panel-gap);
   min-height: 0;
   overflow: hidden;
 }
 
-/* The central binding/crease where the two facing pages (illustration + log)
-   meet — dark tooled leather with a deep gutter shadow and faint stitching. */
+/* The open book: one parchment sheet (torn outer edges) holding two pages. */
+#book-spread {
+  display: grid;
+  grid-template-columns: 1.1fr 26px 1fr;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The two inner panels are regions on the single page — strip their own page
+   chrome (background, border, torn mask, lift) so only the spread reads as a
+   page. They keep the .snes-panel class so the skills-screen toggle still works. */
+#book-spread > .snes-panel {
+  background: none;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  -webkit-mask: none;
+  mask: none;
+  box-shadow: none;
+  filter: none;
+  padding: 4px 10px;
+}
+
+/* The crease down the middle of the open book. Lives inside the spread page,
+   so it matches the pages' height exactly instead of sticking out. */
 #book-binding {
   align-self: stretch;
-  position: relative;
-  border-radius: 2px;
   background:
-    /* faint stitched thread up the centre */
-    repeating-linear-gradient(0deg,
-      transparent 0 9px,
-      rgba(228,210,170,0.32) 9px 13px,
-      transparent 13px 24px),
-    /* gutter shadow: darkest down the crease, fading to the page edges */
+    /* the fold: a soft shadow valley with a faint crease line at dead centre */
     linear-gradient(90deg,
-      rgba(0,0,0,0.45) 0%,
-      rgba(0,0,0,0.10) 28%,
-      rgba(0,0,0,0.66) 50%,
-      rgba(0,0,0,0.10) 72%,
-      rgba(0,0,0,0.45) 100%),
-    /* leather spine */
-    linear-gradient(90deg, #3a2c1c, #4a3825 50%, #3a2c1c);
-  background-size: 4px 100%, 100% 100%, 100% 100%;
-  background-position: center, center, center;
-  background-repeat: no-repeat;
-  box-shadow: inset 0 0 7px rgba(0,0,0,0.7);
+      rgba(90,66,36,0)    0%,
+      rgba(90,66,36,0.04) 22%,
+      rgba(74,52,28,0.22) 46%,
+      rgba(44,30,16,0.34) 50%,
+      rgba(74,52,28,0.22) 54%,
+      rgba(90,66,36,0.04) 78%,
+      rgba(90,66,36,0)    100%);
 }
 
 /* â”€â”€ Details Panel (left column) â”€â”€ */
@@ -803,7 +828,7 @@ html, body {
 /* â”€â”€ Command Menu â”€â”€ */
 
 #command-menu {
-  padding: 8px 12px;
+  padding: 8px 18px;
 }
 
 #command-buttons {
@@ -850,7 +875,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 18px;
 }
 
 .input-prompt {
@@ -865,22 +890,24 @@ html, body {
 
 .pixel-input {
   flex: 1;
-  background: var(--color-bg);
+  /* Recessed inkwell field: dark, with light page-cream text so it reads
+     clearly (the dark-on-dark default was nearly invisible). */
+  background: #221c16;
   border: var(--border-width) solid var(--color-border);
-  color: var(--color-text);
+  color: var(--page-base);
   font-family: var(--font-pixel);
   font-size: 9px;
   padding: 6px 8px;
   outline: none;
-  caret-color: var(--color-cursor);
+  caret-color: var(--page-base);
 }
 
 .pixel-input:focus {
-  border-color: var(--color-border-light);
+  border-color: var(--color-border-gold);
 }
 
 .pixel-input::placeholder {
-  color: var(--color-text-dim);
+  color: rgba(236, 228, 207, 0.45);
 }
 
 .pixel-label {
@@ -1082,10 +1109,14 @@ html, body {
 @media (max-width: 700px) {
   #game-body {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto 1fr;
   }
 
-  /* No book spread on a single-column phone layout. */
+  /* No open-book spread on a single-column phone layout — stack the pages. */
+  #book-spread {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
   #book-binding { display: none; }
 
   #details-panel { max-height: 30vh; }

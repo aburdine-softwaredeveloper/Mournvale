@@ -162,26 +162,33 @@
 
       </div>
 
-      <!-- Center column: the room illustration (no label — the picture is
-           understood to be the view of the room). -->
-      <div id="room-image-panel" class="snes-panel">
-        <div id="room-image" class="room-image"></div>
+      <!-- Open-book spread: the room illustration (left page) and the log
+           (right page) are two halves of ONE parchment sheet, joined by a
+           central crease. The torn edges live on this outer sheet; the two
+           inner panels are just regions on the page. -->
+      <div id="book-spread" class="snes-panel">
 
-        <!-- Talent tree mode — portrait preview + class talent tree. -->
-        <div id="talent-panel" class="skill-mode"></div>
-      </div>
+        <!-- Left page: the room illustration (no label — the picture is
+             understood to be the view of the room). -->
+        <div id="room-image-panel" class="snes-panel">
+          <div id="room-image" class="room-image"></div>
 
-      <!-- Book binding: the central crease between the two facing pages
-           (the room illustration and the log). -->
-      <div id="book-binding" aria-hidden="true"></div>
+          <!-- Talent tree mode — portrait preview + class talent tree. -->
+          <div id="talent-panel" class="skill-mode"></div>
+        </div>
 
-      <!-- Right column: message log -->
-      <div id="log-panel" class="snes-panel">
-        <div class="panel-title">◆ LOG</div>
-        <div id="message-log"></div>
+        <!-- The crease down the middle of the open book. -->
+        <div id="book-binding" aria-hidden="true"></div>
 
-        <!-- Ability loadout mode — slots + known abilities. -->
-        <div id="ability-panel" class="skill-mode"></div>
+        <!-- Right page: message log -->
+        <div id="log-panel" class="snes-panel">
+          <div class="panel-title">◆ LOG</div>
+          <div id="message-log"></div>
+
+          <!-- Ability loadout mode — slots + known abilities. -->
+          <div id="ability-panel" class="skill-mode"></div>
+        </div>
+
       </div>
 
     </div>
