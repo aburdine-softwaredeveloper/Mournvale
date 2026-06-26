@@ -213,7 +213,8 @@ export function rollAttack(
     targetAC,
     hit,
     crit,
-    damage,
+    // Omit `damage` entirely on a miss (exactOptionalPropertyTypes).
+    ...(damage && { damage }),
   };
 }
 

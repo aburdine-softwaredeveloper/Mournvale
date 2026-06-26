@@ -69,13 +69,27 @@ class WorldManager {
 
   findNpcInRoomByName(roomId: string, name: string): NPC | undefined {
     const lower = name.toLowerCase();
-    return (this.byRoom.get(roomId) ?? []).find(
-      n => n.name.toLowerCase().startsWith(lower)
+    const list = this.byRoom.get(roomId) ?? [];
+    // Prefer a full-name prefix match ("sister" → Sister Mara), but also accept
+    // any individual name token ("mara" → Sister Mara, "vey" → Captain Vey) so
+    // players can address an NPC by the distinctive part of their name — which
+    // is what they naturally type when reporting back to a quest-giver.
+    return (
+      list.find(n => n.name.toLowerCase().startsWith(lower)) ??
+      list.find(n => n.name.toLowerCase().split(/\s+/).some(tok => tok.startsWith(lower)))
     );
   }
 
   getNpcById(id: string): NPC | undefined {
     return this.byId.get(id);
+  }
+
+  /** The id of the NPC who posts a given quest (questgiver), if any. */
+  getQuestGiverNpcId(questId: string): string | undefined {
+    for (const npc of this.byId.values()) {
+      if (npc.questIds?.includes(questId)) return npc.id;
+    }
+    return undefined;
   }
 
   getNpcsInRoom(roomId: string): NPC[] {

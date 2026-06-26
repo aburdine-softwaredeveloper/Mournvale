@@ -47,12 +47,36 @@ export interface Quest {
   /** True if this quest was procedurally generated (vs authored) */
   generated: boolean;
   /**
-   * Optional combat objective: defeating all hostiles in this room completes
-   * the quest. The single hook that turns a board quest into a clearable one
-   * (see QuestManager.complete + the combat-end handler). Absent = no combat
-   * objective (board-only flavor or future objective types).
+   * The room where this quest's objective is carried out. For "clear" quests,
+   * defeating all hostiles here completes it (the combat-end handler). For the
+   * non-combat kinds below, simply entering this room performs the field task
+   * (gather/scout/investigate/deliver). Absent = board-only flavor.
    */
   objectiveRoomId?: string;
+  /**
+   * What kind of objective `objectiveRoomId` represents.
+   *   "clear"       → defeat all hostiles in the room (combat).
+   *   "gather"      → collect something found in the room.
+   *   "scout"       → observe/recon the room.
+   *   "investigate" → search the room for what's wrong.
+   *   "deliver"     → carry an item to the room (one-way; auto-completes).
+   * Defaults to "clear" when omitted (back-compat with combat quests).
+   */
+  objectiveKind?: "clear" | "gather" | "scout" | "investigate" | "deliver";
+  /**
+   * For non-combat quests with a return step: the NPC id the player reports
+   * back to (usually the giver) to claim the reward, once the field objective
+   * is met. Absent = the quest auto-completes the moment the objective is met
+   * (used for "deliver", which ends at the destination).
+   */
+  turnInNpcId?: string;
+  /**
+   * Quest-specific clue surfaced when the player uses `look` while standing in
+   * this quest's objective room. Lets close inspection tell the story — the
+   * caravan's broken axle, the thing wedged in the bell — rather than the bare
+   * room description. Shown only while this quest is the player's active one.
+   */
+  lookClue?: string;
 }
 
 /**
@@ -65,6 +89,12 @@ export interface ActiveQuest {
   partyId: string | null;
   /** Unix ms when accepted */
   acceptedAt: number;
+  /**
+   * Field-objective progress for non-combat quests: set true once the player
+   * has reached the objective room and performed the task, after which they can
+   * report back to `turnInNpcId`. Combat ("clear") quests don't use this.
+   */
+  objectiveMet?: boolean;
 }
 
 /**

@@ -13,14 +13,28 @@
 
   <link rel="stylesheet" href="./style.css" />
   <link rel="stylesheet" href="./menu-intro-fog.css" />
+  <link rel="stylesheet" href="./boot.css" />
 </head>
 <body>
+
+  <!-- ═══════════════════════════════════════
+       BOOT SPLASH SCREEN
+       Game Boy Color style power-on: stormy sky,
+       title drop, year stamp. Skippable. Shown first.
+  ════════════════════════════════════════ -->
+  <div id="screen-boot" class="screen screen-active">
+    <div id="boot-content">
+      <div id="boot-title">MOURNVALE</div>
+      <div id="boot-stamp">© 2026 &nbsp;·&nbsp; aburdine.softwaredeveloper</div>
+      <div id="boot-prompt" class="blink">▸ PRESS START</div>
+    </div>
+  </div>
 
   <!-- ═══════════════════════════════════════
        MAIN MENU SCREEN
        New Game / Load Game + 5-slot picker
   ════════════════════════════════════════ -->
-  <div id="screen-menu" class="screen screen-active">
+  <div id="screen-menu" class="screen hidden">
     <div id="menu-content">
 
       <div id="menu-title">MOURNVALE</div>
@@ -148,22 +162,33 @@
 
       </div>
 
-      <!-- Center column: square room image -->
-      <div id="room-image-panel" class="snes-panel">
-        <div class="panel-title">◆ VIEW</div>
-        <div id="room-image" class="room-image"></div>
+      <!-- Open-book spread: the room illustration (left page) and the log
+           (right page) are two halves of ONE parchment sheet, joined by a
+           central crease. The torn edges live on this outer sheet; the two
+           inner panels are just regions on the page. -->
+      <div id="book-spread" class="snes-panel">
 
-        <!-- Talent tree mode — portrait preview + class talent tree. -->
-        <div id="talent-panel" class="skill-mode"></div>
-      </div>
+        <!-- Left page: the room illustration (no label — the picture is
+             understood to be the view of the room). -->
+        <div id="room-image-panel" class="snes-panel">
+          <div id="room-image" class="room-image"></div>
 
-      <!-- Right column: message log -->
-      <div id="log-panel" class="snes-panel">
-        <div class="panel-title">◆ LOG</div>
-        <div id="message-log"></div>
+          <!-- Talent tree mode — portrait preview + class talent tree. -->
+          <div id="talent-panel" class="skill-mode"></div>
+        </div>
 
-        <!-- Ability loadout mode — slots + known abilities. -->
-        <div id="ability-panel" class="skill-mode"></div>
+        <!-- The crease down the middle of the open book. -->
+        <div id="book-binding" aria-hidden="true"></div>
+
+        <!-- Right page: message log -->
+        <div id="log-panel" class="snes-panel">
+          <div class="panel-title">◆ LOG</div>
+          <div id="message-log"></div>
+
+          <!-- Ability loadout mode — slots + known abilities. -->
+          <div id="ability-panel" class="skill-mode"></div>
+        </div>
+
       </div>
 
     </div>

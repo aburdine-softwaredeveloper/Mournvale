@@ -24,41 +24,77 @@
 }
 
 :root {
-  /* Game Boy Pocket grayscale palette */
-  --color-bg:           #0f0f0f;
-  --color-bg-panel:     #1c1c1c;
-  --color-bg-panel-alt: #262626;
-  --color-border:       #5a5a5a;
-  --color-border-light: #8a8a8a;
-  --color-border-gold:  #b0b0b0;
+  /* ── "Spellbook" theme ─────────────────────────────────────────────────
+     A rustic leather-bound book: a dark leather shell (cover) holding tan
+     parchment "pages" (panels), printed in dark sepia ink. Two palettes:
+     LEATHER (dark grey-brown shell) and PARCHMENT (muted tan pages), with
+     burnt-sienna / oxblood / moss accents for that old-fantasy feel.
 
-  --color-text:         #e0e0e0;
-  --color-text-dim:     #8a8a8a;
-  --color-text-gold:    #d8d8d8;
-  --color-text-system:  #b0b0b0;
-  --color-text-chat:    #ffffff;
-  --color-text-error:   #c0c0c0;
-  --color-text-presence:#9a9a9a;
+     ── Page palette for your PNG art ──
+     Paint room illustrations to sit on the page so they read as plates in a
+     book. Match these and they'll blend seamlessly:
+        Cream page (base) ........ #ece4cf   (--page-base)
+        Aged page (deeper) ....... #ddd2b6   (--page-deep)
+        Page shadow / edge ....... #c7b994   (--page-shadow)
+        Sepia ink (linework) ..... #382f22   (--ink)
+        Burnt sienna (accent) .... #8a5a2c
+        Oxblood (warm red) ....... #8a3b2a
+        Moss (cool accent) ....... #5c6442
+        Leather (border/frame) ... #2b2622 / #4a3b28
+     ───────────────────────────────────────────────────────────────────── */
 
-  --color-btn-bg:       #2e2e2e;
-  --color-btn-border:   #6a6a6a;
-  --color-btn-hover-bg: #3e3e3e;
-  --color-btn-active:   #b0b0b0;
+  /* Page palette — exposed for art-matching and reuse.
+     Lighter, slightly cooler cream than warm parchment (still aged, not white). */
+  --page-base:          #ece4cf;  /* bright cream page */
+  --page-deep:          #ddd2b6;  /* aged page (deeper) */
+  --page-shadow:        #c7b994;  /* page shadow / edge */
+  --ink:                #382f22;
 
-  --color-cursor:       #e0e0e0;
-  --color-selection:    #3e3e3e;
+  --color-bg:           #2b2622;  /* dark leather shell (book cover) */
+  --color-bg-panel:     #ece4cf;  /* bright cream page */
+  --color-bg-panel-alt: #ddd2b6;  /* aged page (deeper) */
+  --color-border:       #7a6344;  /* worn ink / leather edge */
+  --color-border-light: #5a4630;  /* darker edge (emphasis) */
+  --color-border-gold:  #8a5a2c;  /* burnt sienna (frames, titles) */
+
+  --color-text:         #3b2f20;  /* dark sepia ink */
+  --color-text-dim:     #6e5c42;  /* faded ink */
+  --color-text-gold:    #5a3a1c;  /* heading ink (deep brown) */
+  --color-text-system:  #5b4a34;  /* aged ink */
+  --color-text-chat:    #2a2117;  /* darkest ink */
+  --color-text-error:   #8a3b2a;  /* oxblood */
+  --color-text-presence:#5c6442;  /* moss */
+
+  --color-btn-bg:       #c8b485;  /* tan label / page tab */
+  --color-btn-border:   #7a6344;
+  --color-btn-hover-bg: #bda36f;
+  --color-btn-active:   #5a3a1c;
+
+  --color-cursor:       #5a3a1c;
+  --color-selection:    #c2a878;
 
   --font-pixel: 'Press Start 2P', monospace;
 
   --panel-gap: 4px;
-  --panel-pad: 12px;
+  --panel-pad: 24px;
   --border-width: 2px;
+
+  /* Torn-paper mask: a rectangle whose edges are eaten away by high-frequency
+     turbulence, giving sharp, cut-in/nibbled aged edges (not smooth waves) —
+     the leather shows through the bites. Stretched per-panel via
+     mask-size:100% 100%, so the erosion stays proportional at any size. */
+  --torn-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320' preserveAspectRatio='none'%3E%3Cfilter id='t'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.09 0.07' numOctaves='4' seed='11' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='4'/%3E%3C/filter%3E%3Crect x='4' y='4' width='312' height='312' rx='1' fill='%23fff' filter='url(%23t)'/%3E%3C/svg%3E");
 }
 
 html, body {
   height: 100%;
   width: 100%;
-  background: var(--color-bg);
+  /* Dark tooled-leather cover: a warm brown wash with a faint grain. */
+  background:
+    repeating-linear-gradient(48deg, rgba(0,0,0,0.05) 0 2px, transparent 2px 5px),
+    repeating-linear-gradient(-42deg, rgba(255,240,210,0.025) 0 2px, transparent 2px 6px),
+    radial-gradient(ellipse at 50% 40%, #332c24, #211c17 90%);
+  background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-pixel);
   font-size: 10px;
@@ -93,10 +129,23 @@ html, body {
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .snes-panel {
-  background: var(--color-bg-panel);
+  position: relative;
+  /* Cream page: bright base with a soft highlight + faint, cool-leaning
+     foxing so it stays light rather than warm/brown. */
+  background:
+    radial-gradient(ellipse at 28% 18%, rgba(255,255,250,0.5), transparent 58%),
+    radial-gradient(ellipse at 80% 88%, rgba(150,120,75,0.08), transparent 55%),
+    radial-gradient(ellipse at 92% 10%, rgba(150,120,75,0.06), transparent 40%),
+    var(--color-bg-panel);
   border: var(--border-width) solid var(--color-border);
-  outline: var(--border-width) solid var(--color-bg);
-  outline-offset: -4px;
+  /* Tattered/worn page edges: the fractal mask erodes the rectangle so the
+     dark leather shows through the frays. */
+  -webkit-mask: var(--torn-mask) center / 100% 100% no-repeat;
+  mask: var(--torn-mask) center / 100% 100% no-repeat;
+  /* Aged vignette inside; the page lift uses drop-shadow so the shadow
+     follows the torn silhouette (a box-shadow would be clipped by the mask). */
+  box-shadow: inset 0 0 22px rgba(95,62,30,0.18);
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
   padding: var(--panel-pad);
 }
 
@@ -120,7 +169,7 @@ html, body {
 
 #screen-menu {
   /* position: relative is set by menu-intro-fog.css for the canvas */
-  background: #0a0608;
+  background: #241f1a; /* dark leather cover */
   justify-content: center;
   align-items: center;
 }
@@ -138,15 +187,16 @@ html, body {
 }
 
 #menu-title {
-  color: var(--color-text-gold);
+  /* Gold leaf stamped into the leather cover. */
+  color: #d8b878;
   font-size: 28px;
   letter-spacing: 8px;
-  text-shadow: 3px 3px 0 #000, 4px 4px 0 var(--color-border);
+  text-shadow: 1px 1px 0 #1a140e, 2px 2px 3px rgba(0,0,0,0.6);
   margin-bottom: 0;
 }
 
 #menu-subtitle {
-  color: var(--color-border-gold);
+  color: #b8915a; /* faded gilt on leather */
   font-size: 12px;
   letter-spacing: 2px;
   margin-bottom: 24px;
@@ -230,7 +280,7 @@ html, body {
 }
 
 .snes-btn-danger:hover {
-  background: #383838;
+  background: #c9a98a;
   border-color: var(--color-text-error);
 }
 
@@ -274,7 +324,7 @@ html, body {
 }
 
 #intro-header {
-  color: var(--color-text-gold);
+  color: #d8b878; /* gilt heading on the dark page */
   font-size: 10px;
   letter-spacing: 3px;
   text-transform: uppercase;
@@ -285,7 +335,7 @@ html, body {
 }
 
 #intro-text {
-  color: var(--color-text);
+  color: #e8dcc0; /* candle-lit cream ink on dark */
   font-size: 10px;
   line-height: 2;
   min-height: 120px;
@@ -293,7 +343,7 @@ html, body {
 }
 
 #intro-cursor {
-  color: var(--color-cursor);
+  color: #c2a878;
   font-size: 8px;
   margin-top: 24px;
   text-align: right;
@@ -321,22 +371,17 @@ html, body {
 
 #creation-bg {
   flex: 1;
+  /* Dark leather scene backdrop with a faint tooled grid. */
   background:
     repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 31px,
-      var(--color-bg-panel) 31px,
-      var(--color-bg-panel) 32px
+      0deg, transparent, transparent 31px,
+      rgba(0,0,0,0.12) 31px, rgba(0,0,0,0.12) 32px
     ),
     repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 31px,
-      var(--color-bg-panel) 31px,
-      var(--color-bg-panel) 32px
+      90deg, transparent, transparent 31px,
+      rgba(0,0,0,0.12) 31px, rgba(0,0,0,0.12) 32px
     );
-  background-color: #161616;
+  background-color: #2a241e;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -344,7 +389,7 @@ html, body {
 }
 
 #creation-scene-label {
-  color: var(--color-text-gold);
+  color: #d8b878;
   font-size: 12px;
   letter-spacing: 4px;
   text-transform: uppercase;
@@ -448,7 +493,8 @@ html, body {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: var(--panel-gap);
-  padding: var(--panel-gap);
+  /* Inset the whole UI from the window edges so nothing rides the screen edge. */
+  padding: 12px 18px;
   height: 100vh;
   overflow: hidden;
 }
@@ -460,7 +506,18 @@ html, body {
   justify-content: flex-start;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 8px 18px;
+}
+
+/* The wide chrome bars (header, command menu, input bar) are too short-and-wide
+   for the stretched torn-mask — its horizontal erosion would scale with width
+   and clip the portrait / buttons / SEND. Keep them as clean parchment strips
+   (no torn mask) so their content never gets cut off, at any window width. */
+#game-header,
+#command-menu,
+#input-panel {
+  -webkit-mask: none;
+  mask: none;
 }
 
 .header-portrait {
@@ -501,10 +558,51 @@ html, body {
 
 #game-body {
   display: grid;
-  grid-template-columns: 1fr 1.1fr 1fr;
+  /* a left "notes" page (details) + the open-book spread (illustration | log) */
+  grid-template-columns: 1fr 2.3fr;
   gap: var(--panel-gap);
   min-height: 0;
   overflow: hidden;
+}
+
+/* The open book: one parchment sheet (torn outer edges) holding two pages. */
+#book-spread {
+  display: grid;
+  grid-template-columns: 1.1fr 26px 1fr;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The two inner panels are regions on the single page — strip their own page
+   chrome (background, border, torn mask, lift) so only the spread reads as a
+   page. They keep the .snes-panel class so the skills-screen toggle still works. */
+#book-spread > .snes-panel {
+  background: none;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  -webkit-mask: none;
+  mask: none;
+  box-shadow: none;
+  filter: none;
+  padding: 4px 10px;
+}
+
+/* The crease down the middle of the open book. Lives inside the spread page,
+   so it matches the pages' height exactly instead of sticking out. */
+#book-binding {
+  align-self: stretch;
+  background:
+    /* the fold: a soft shadow valley with a faint crease line at dead centre */
+    linear-gradient(90deg,
+      rgba(90,66,36,0)    0%,
+      rgba(90,66,36,0.04) 22%,
+      rgba(74,52,28,0.22) 46%,
+      rgba(44,30,16,0.34) 50%,
+      rgba(74,52,28,0.22) 54%,
+      rgba(90,66,36,0.04) 78%,
+      rgba(90,66,36,0)    100%);
 }
 
 /* â”€â”€ Details Panel (left column) â”€â”€ */
@@ -528,14 +626,116 @@ html, body {
 .room-image {
   width: 100%;
   aspect-ratio: 1 / 1;
-  background: var(--color-bg);
-  border: var(--border-width) solid var(--color-border);
-  outline: var(--border-width) solid var(--color-bg);
-  outline-offset: -4px;
+  /* An illustrated plate pressed into the page: aged-paper mat, sienna frame
+     with a dark inset line, and a soft inner shadow for depth. */
+  background: var(--page-deep);
+  border: var(--border-width) solid var(--color-border-gold);
+  outline: var(--border-width) solid var(--color-border-light);
+  outline-offset: -5px;
+  box-shadow: inset 0 0 16px rgba(80,52,24,0.32);
   image-rendering: pixelated;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Anchor for the sliding dialogue-portrait layer. */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Art fills the room-image box; the portrait layer overlays it. */
+.room-image-art {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.room-image-art svg,
+.room-image-art .room-image-png {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* ── Sliding dialogue portraits (over the room image) ── */
+
+.dlg-portrait-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.dlg-portrait {
+  position: absolute;
+  bottom: 0;
+  width: 42%;
+  max-width: 150px;
+  /* Full box height as the sizing reference so the frame's max-height can
+     keep the portrait inside short room boxes (mobile/narrow layouts). */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 2px;
+  padding-bottom: 4px;
+  /* Hidden off-screen until .dlg-portrait-in is applied. */
+  transition: transform 280ms steps(7), opacity 280ms steps(7);
+  opacity: 0;
+}
+
+.dlg-portrait-left  { left: 4px;  transform: translateX(-130%); }
+.dlg-portrait-right { right: 4px; transform: translateX(130%); }
+
+.dlg-portrait.dlg-portrait-in {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.dlg-portrait-frame {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  /* Never let the frame overflow a short room box — the SVG inside keeps its
+     own aspect via preserveAspectRatio, so a slight squeeze is invisible. */
+  max-height: calc(100% - 16px);
+  background: var(--color-bg-panel);
+  border: var(--border-width) solid var(--color-border-gold);
+  outline: var(--border-width) solid var(--color-bg);
+  outline-offset: -4px;
+  image-rendering: pixelated;
+  overflow: hidden;
+}
+
+.dlg-portrait-frame svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.dlg-portrait-name {
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: var(--color-text-gold);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  padding: 2px 5px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dlg-portrait { transition: opacity 120ms linear; }
+  .dlg-portrait-left, .dlg-portrait-right { transform: none; }
 }
 
 .room-image svg,
@@ -628,7 +828,7 @@ html, body {
 /* â”€â”€ Command Menu â”€â”€ */
 
 #command-menu {
-  padding: 8px 12px;
+  padding: 8px 18px;
 }
 
 #command-buttons {
@@ -675,7 +875,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 18px;
 }
 
 .input-prompt {
@@ -690,22 +890,24 @@ html, body {
 
 .pixel-input {
   flex: 1;
-  background: var(--color-bg);
+  /* Recessed inkwell field: dark, with light page-cream text so it reads
+     clearly (the dark-on-dark default was nearly invisible). */
+  background: #221c16;
   border: var(--border-width) solid var(--color-border);
-  color: var(--color-text);
+  color: var(--page-base);
   font-family: var(--font-pixel);
   font-size: 9px;
   padding: 6px 8px;
   outline: none;
-  caret-color: var(--color-cursor);
+  caret-color: var(--page-base);
 }
 
 .pixel-input:focus {
-  border-color: var(--color-border-light);
+  border-color: var(--color-border-gold);
 }
 
 .pixel-input::placeholder {
-  color: var(--color-text-dim);
+  color: rgba(236, 228, 207, 0.45);
 }
 
 .pixel-label {
@@ -780,6 +982,44 @@ html, body {
 .party-leave {
   font-size: 7px;
   padding: 5px 8px;
+}
+
+/* INVITE control — lives beneath the PARTY roster (replaces the
+   removed `invite`/`party` text commands). */
+.party-invite {
+  margin-top: 8px;
+}
+
+.party-invite-toggle {
+  font-size: 7px;
+  padding: 5px 8px;
+  width: 100%;
+}
+
+.party-invite-form {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.party-invite-form.hidden {
+  display: none;
+}
+
+.party-invite-input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 7px;
+  padding: 4px 6px;
+  color: var(--color-text);
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+}
+
+.party-invite-send {
+  font-size: 7px;
+  padding: 4px 6px;
 }
 
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -907,8 +1147,15 @@ html, body {
 @media (max-width: 700px) {
   #game-body {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto 1fr;
   }
+
+  /* No open-book spread on a single-column phone layout — stack the pages. */
+  #book-spread {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  #book-binding { display: none; }
 
   #details-panel { max-height: 30vh; }
   #room-image-panel { max-height: 50vh; }
@@ -925,7 +1172,7 @@ html, body {
 }
 
 .npc-wrapper-open {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(0, 0, 0, 0.22);
 }
 
 .npc-row {
@@ -939,11 +1186,11 @@ html, body {
 }
 
 .npc-row:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.07);
 }
 
 .npc-wrapper-open .npc-row {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.07);
 }
 
 .npc-name {
@@ -1009,7 +1256,7 @@ html, body {
 }
 
 .npc-intent-fight:hover {
-  background: #2a1515;
+  background: #c9a98a;
   border-color: var(--color-text-error);
   color: var(--color-text-error);
 }

@@ -23,8 +23,13 @@
  *   stay dormant until that data is added to the type.
  *
  * Networking:
- *   This is a pure view + the Leave button. It reports the leave intent
- *   via a callback and never touches the socket.
+ *   This is a pure view. It reports leave and invite intents via callbacks
+ *   and never touches the socket.
+ *
+ * Invite:
+ *   The "INVITE" button replaces the old `invite`/`party` text commands.
+ *   It is always visible (even when solo, so a player can start a party).
+ *   Clicking it reveals an inline name field; submitting fires onInvite.
  */
 
 import type { PartyView, PartyMemberView } from "../../types/party";
@@ -36,10 +41,13 @@ export class PartyPanel {
   /** Callback fired when the player clicks LEAVE PARTY. */
   private onLeave: (() => void) | null = null;
 
+  /** Callback fired with the target name when an invite is submitted. */
+  private onInvite: ((name: string) => void) | null = null;
+
   constructor() {
     this.root = this.requireEl("party-panel-container");
-    // Start blank — a solo player sees an empty section beneath ◆ PARTY.
-    this.root.innerHTML = "";
+    // Solo players still see the INVITE control beneath ◆ PARTY.
+    this.update(null);
   }
 
   // ─────────────────────────────────────────────
@@ -51,25 +59,32 @@ export class PartyPanel {
     this.onLeave = handler;
   }
 
+  /** Registers the handler invoked when an invite name is submitted. */
+  public setInviteHandler(handler: (name: string) => void): void {
+    this.onInvite = handler;
+  }
+
   /**
    * Re-renders the roster.
-   *   - null, or a party of one  → render nothing (solo).
-   *   - 2+ members               → render a card per member + Leave button.
+   *   - null, or a party of one  → just the INVITE control (solo).
+   *   - 2+ members               → a card per member, Leave + Invite buttons.
    */
   public update(party: PartyView | null): void {
     this.root.innerHTML = "";
 
     // Solo: PartyManager disbands a party of one, and the server sends
     // null in that case — treat both as "no party".
-    if (!party || party.members.length <= 1) {
-      return;
+    const inParty = !!party && party.members.length > 1;
+
+    if (inParty) {
+      for (const member of party!.members) {
+        this.root.appendChild(this.buildMemberCard(member));
+      }
+      this.root.appendChild(this.buildLeaveButton());
     }
 
-    for (const member of party.members) {
-      this.root.appendChild(this.buildMemberCard(member));
-    }
-
-    this.root.appendChild(this.buildLeaveButton());
+    // The invite control sits underneath the roster (or alone when solo).
+    this.root.appendChild(this.buildInviteControl());
   }
 
   // ─────────────────────────────────────────────
@@ -105,6 +120,56 @@ export class PartyPanel {
     btn.textContent = "LEAVE PARTY";
     btn.addEventListener("click", () => this.onLeave?.());
     return btn;
+  }
+
+  /**
+   * Builds the INVITE control: a toggle button that reveals an inline
+   * name field. Submitting (SEND or Enter) fires onInvite and resets.
+   * Replaces the removed `invite <name>` text command.
+   */
+  private buildInviteControl(): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "party-invite";
+
+    const toggle = document.createElement("button");
+    toggle.className = "snes-btn party-invite-toggle";
+    toggle.textContent = "✦ INVITE";
+
+    const form = document.createElement("div");
+    form.className = "party-invite-form hidden";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "party-invite-input";
+    input.placeholder = "Player name…";
+
+    const send = document.createElement("button");
+    send.className = "snes-btn party-invite-send";
+    send.textContent = "SEND";
+
+    const submit = () => {
+      const name = input.value.trim();
+      if (!name) return;
+      this.onInvite?.(name);
+      input.value = "";
+      form.classList.add("hidden");
+    };
+
+    toggle.addEventListener("click", () => {
+      const opening = form.classList.contains("hidden");
+      form.classList.toggle("hidden");
+      if (opening) input.focus();
+    });
+    send.addEventListener("click", submit);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); submit(); }
+    });
+
+    form.appendChild(input);
+    form.appendChild(send);
+    wrap.appendChild(toggle);
+    wrap.appendChild(form);
+    return wrap;
   }
 
   // ─────────────────────────────────────────────

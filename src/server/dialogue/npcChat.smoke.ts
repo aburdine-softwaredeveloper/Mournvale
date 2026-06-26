@@ -102,6 +102,24 @@ async function main(): Promise<void> {
     assert.ok(/in your own voice/i.test(withWorld), "instructs the NPC to use it naturally");
   });
 
+  await check("buildNpcSystemPrompt folds in disposition + rumor reputation when provided", () => {
+    const marta = worldManager.getNpcById("marta")!;
+    const base = ctxFor(marta, "Help me?", "success");
+    // Absent by default…
+    const bare = buildNpcSystemPrompt(base);
+    assert.ok(!/HOW YOU FEEL ABOUT/i.test(bare), "no relationship block without disposition");
+    assert.ok(!/HEARD AROUND TOWN/i.test(bare), "no rumor block without reputation");
+    // …present and verbatim when supplied.
+    const withSocial = buildNpcSystemPrompt({
+      ...base,
+      dispositionContext: "You trust this person almost as an old friend.",
+      rumorContext: "WHAT YOU'VE HEARD AROUND TOWN ABOUT THEM:\n- Word is they saw the cellar job through.",
+    });
+    assert.ok(withSocial.includes("trust this person almost as an old friend"), "embeds disposition tone");
+    assert.ok(withSocial.includes("saw the cellar job through"), "embeds the heard rumor");
+    assert.ok(/half-trust gossip/i.test(withSocial), "frames rumor as gossip, not fact");
+  });
+
   await check("NpcChatService(scripted only) responds and reports the brain", async () => {
     const marta = worldManager.getNpcById("marta")!;
     const service = new NpcChatService([new ScriptedBrain()]);

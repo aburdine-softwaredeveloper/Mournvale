@@ -70,10 +70,12 @@ export class AssetRegistry {
 
   /**
    * Resolves an asset key to its runtime URL. Keys with an explicit extension
-   * are used as-is; bare keys default to ".svg" for back-compat.
+   * are used as-is; bare keys default to ".png" — the project ships raster art
+   * (hand-made pixel PNGs), so PNG is the default everywhere. Use an explicit
+   * ".svg" key only for the rare inline/vector asset.
    */
   private urlFor(key: AssetKey): string {
-    const ext = AssetRegistry.EXT_RE.test(key) ? "" : ".svg";
+    const ext = AssetRegistry.EXT_RE.test(key) ? "" : ".png";
     return `${this.basePath}/${key}${ext}`;
   }
 
@@ -86,9 +88,14 @@ export class AssetRegistry {
     return this.urlFor(key);
   }
 
-  /** True when a key refers to a raster image (PNG/JPG/…), not inline SVG. */
+  /**
+   * True when a key refers to a raster image (PNG/JPG/…) loaded via <img>,
+   * rather than inline SVG. Bare keys count as raster because they now default
+   * to PNG (see urlFor); only an explicit ".svg" key is treated as inline SVG.
+   */
   public isRaster(key: AssetKey): boolean {
-    return /\.(png|jpg|jpeg|webp|gif)$/i.test(key);
+    if (/\.svg$/i.test(key)) return false;
+    return true;
   }
 
   /**

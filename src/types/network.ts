@@ -16,7 +16,7 @@
 
 import type { PartyView, PartyInviteView } from "./party";
 import type { QuestBoardView } from "./quest";
-import type { NpcView, NpcInteractionView, TalkIntent, DialogueOutcome } from "./npc";
+import type { NpcView, NpcInteractionView, NpcRole, TalkIntent, DialogueOutcome } from "./npc";
 import type { CombatStateView, CombatEvent, CombatActionSubmission, CombatOutcome } from "./combat";
 import type { AbilityScore } from "./character";
 import type { TalentNode, TalentNodeState } from "./progression";
@@ -87,6 +87,24 @@ export interface ChatMessage {
   payload: {
     speaker: string;
     message: string;
+  };
+}
+
+/**
+ * Drives the sliding conversation portrait overlay (presentation only — no
+ * text). The server emits this so portraits are multiplayer-correct: a
+ * speaker never receives their own, only the *other* room players do.
+ *   • role "player"  → a generic player placeholder portrait
+ *   • role <NpcRole> → the role-tinted NPC placeholder portrait
+ *   • side "left"    → room/party speech (and the NPC you address)
+ *   • side "right"   → a fellow player addressing an NPC
+ */
+export interface SpeakerPortraitMessage {
+  type: "speaker_portrait";
+  payload: {
+    name: string;
+    role: NpcRole | "player";
+    side: "left" | "right";
   };
 }
 
@@ -506,6 +524,7 @@ export type ServerMessage =
   | SystemMessage
   | RoomMessage
   | ChatMessage
+  | SpeakerPortraitMessage
   | DialogueMessage
   | StateTransitionMessage
   | CharacterConfirmedMessage

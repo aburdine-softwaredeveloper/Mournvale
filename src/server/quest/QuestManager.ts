@@ -129,6 +129,18 @@ export class QuestManager {
   }
 
   /**
+   * Marks the owner's active field objective as met (e.g. they reached the
+   * objective room and gathered/scouted/etc.). Returns true only on the
+   * transition from not-met → met, so the caller can fire a one-time message.
+   */
+  public markObjectiveMet(ownerKey: string): boolean {
+    const active = this.activeByOwner.get(ownerKey);
+    if (!active || active.objectiveMet) return false;
+    active.objectiveMet = true;
+    return true;
+  }
+
+  /**
    * Completes the owner's active quest. Unlike abandon(), the quest is NOT
    * returned to the board — it's done. Returns the completed ActiveQuest (so
    * the caller can grant its reward), or null if the owner had no active quest.

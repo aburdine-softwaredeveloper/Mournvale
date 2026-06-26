@@ -13,6 +13,7 @@
 import { WebSocket } from "ws";
 import type { PlayerState, CharacterDraft, CharacterClass, Gender } from "./network";
 import type { ProgressionState } from "./progression";
+import type { SocialMemory } from "./social";
 
 // ─────────────────────────────────────────────
 // PLAYER
@@ -88,6 +89,14 @@ export interface Player {
    * Only present when state === "active".
    */
   progression?: ProgressionState;
+
+  /**
+   * Per-character drifting relationships with NPCs (how each NPC privately feels
+   * about this character, accumulated across conversations). Scoped to
+   * `activeSlot`, created at finalization and loaded from the save. Mutated only
+   * through server/social/disposition.ts helpers. Present when state === "active".
+   */
+  social?: SocialMemory;
 }
 
 // ─────────────────────────────────────────────

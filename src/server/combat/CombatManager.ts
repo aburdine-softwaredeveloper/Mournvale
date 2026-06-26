@@ -29,6 +29,7 @@ import {
   rollDie, rollDice, rollAttack, rollInitiative,
   getAbilityModifier, resolveHealingDice, rollBurnDamage,
 } from "../skills/SkillEngine";
+import { getEnemyTemplate, templateAbilityScores } from "./enemyTemplates";
 
 // ─── Grid helpers ─────────────────────────────────────────────────────────────
 
@@ -51,7 +52,11 @@ function setCell(
   entityId: string | undefined
 ): void {
   const cell = getCell(grid, pos);
-  if (cell) cell.entityId = entityId;
+  if (!cell) return;
+  // Under exactOptionalPropertyTypes an optional prop can't be assigned
+  // `undefined` — clearing the cell means deleting the key.
+  if (entityId === undefined) delete cell.entityId;
+  else cell.entityId = entityId;
 }
 
 function manhattan(a: GridPosition, b: GridPosition): number {
@@ -69,7 +74,7 @@ function canReach(
   if (from.x === to.x && from.y === to.y) return true;
   const visited = new Set<string>();
   const q: Array<{ pos: GridPosition; steps: number }> = [{ pos: from, steps: 0 }];
-  const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+  const dirs: Array<[number, number]> = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
   while (q.length) {
     const { pos, steps } = q.shift()!;
     const key = `${pos.x},${pos.y}`;
@@ -101,14 +106,14 @@ function buildEntityView(e: CombatEntity, isOwner: boolean): CombatEntityView {
           description:   a.description,
           cooldownRounds: a.cooldownRounds,
           usesLeft:      e.abilityUses[a.id] ?? 0,
-          targetType:    a.targetType,
+          // Omit (don't set to undefined) under exactOptionalPropertyTypes.
+          ...(a.targetType && { targetType: a.targetType }),
         }))
     : [];
   return {
     id:         e.id,
     name:       e.name,
     type:       e.type,
-    playerId:   e.playerId,
     position:   e.position,
     hp:         e.hp,
     maxHp:      e.maxHp,
@@ -117,6 +122,7 @@ function buildEntityView(e: CombatEntity, isOwner: boolean): CombatEntityView {
     initiative: e.initiative,
     conditions: e.conditions,
     isDead:     e.isDead,
+    ...(e.playerId !== undefined && { playerId: e.playerId }),
     ...(isOwner && { weapon: e.stats.equippedWeapon, abilities }),
   };
 }
@@ -135,7 +141,7 @@ function buildView(state: CombatState, forPlayerId?: string): CombatStateView {
     entities:        state.entities.map(e =>
       buildEntityView(e, e.playerId === forPlayerId)
     ),
-    myEntityId: myEntity?.id,
+    ...(myEntity && { myEntityId: myEntity.id }),
   };
 }
 
@@ -165,6 +171,47 @@ export function buildEnemyCombatEntity(params: {
     position:    params.position,
     hp:          params.hp ?? 20,
     maxHp:       params.hp ?? 20,
+    stats,
+    initiative:  0,
+    conditions:  [],
+    abilityUses: {},
+    isDead:      false,
+  };
+}
+
+/**
+ * Builds a combat entity from a monster template (see enemyTemplates.ts).
+ *
+ * This is the preferred path for spawning hostiles: the creature carries its own
+ * weapon, ability scores, AC, speed, and HP, so a rat fights like a rat instead
+ * of inheriting a trained Warrior's stat block. The `name` override lets a
+ * specific NPC ("Bold Rat") relabel a shared template.
+ */
+export function buildEnemyFromTemplate(params: {
+  id: string;
+  templateKey: string;
+  position: GridPosition;
+  name?: string;
+}): CombatEntity {
+  const tmpl  = getEnemyTemplate(params.templateKey);
+  // Start from a level-1 Warrior block purely for structural defaults
+  // (skill/save lists are never read for enemies), then overwrite everything
+  // that actually drives combat with the template's own numbers.
+  const stats = buildCharacterStats("Warrior", 1);
+  stats.abilityScores  = templateAbilityScores(tmpl);
+  stats.ac             = tmpl.ac;
+  stats.speed          = tmpl.speed;
+  stats.equippedWeapon = tmpl.weapon;
+  stats.classAbilities = [];   // enemies fight with weapon + AI only
+  stats.abilityUses    = {};
+
+  return {
+    id:          `enemy-${params.id}`,
+    name:        params.name ?? tmpl.name,
+    type:        "enemy",
+    position:    params.position,
+    hp:          tmpl.hp,
+    maxHp:       tmpl.hp,
     stats,
     initiative:  0,
     conditions:  [],
@@ -399,7 +446,7 @@ export class CombatManager {
     }
 
     state.eventLog.push(...events);
-    return { events, isOver: over, outcome: state.outcome };
+    return { events, isOver: over, ...(state.outcome && { outcome: state.outcome }) };
   }
 
   // ── Move ───────────────────────────────────────────────────────────────────
@@ -600,7 +647,11 @@ export class CombatManager {
         action = { type: "attack", targetEntityId: nearest.id };
       }
 
-      state.submissions[enemy.id] = { entityId: enemy.id, move, action };
+      state.submissions[enemy.id] = {
+        entityId: enemy.id,
+        ...(move && { move }),
+        ...(action && { action }),
+      };
     }
   }
 
@@ -609,7 +660,7 @@ export class CombatManager {
     e: CombatEntity,
     target: GridPosition
   ): GridPosition | undefined {
-    const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+    const dirs: Array<[number, number]> = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
     let best: GridPosition | undefined;
     let bestDist = Infinity;
     for (const [dx, dy] of dirs) {

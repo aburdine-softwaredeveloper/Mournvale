@@ -41,16 +41,21 @@ async function main(): Promise<void> {
     baselineAbilityIds("Mage"),
     "baseline Mage abilities seeded"
   );
-  console.log("  ok — v1 save migrates and backfills progression");
+  assert.ok(loaded!.social, "social memory backfilled on v1 migration");
+  assert.deepEqual(loaded!.social!.disposition, {}, "starts a stranger to everyone");
+  console.log("  ok — v1 save migrates and backfills progression + social");
 
-  // ── Round-trip a v2 save with progression ──
+  // ── Round-trip a v3 save with progression AND drifting relationships ──
   const prog = loaded!.progression!;
   prog.xp = 1234;
-  await store.save(playerId, 2, buildSaveData(loaded!.character, "tavern", prog));
+  const social = { disposition: { vey: 24, mara: -12 } };
+  await store.save(playerId, 2, buildSaveData(loaded!.character, "tavern", prog, social));
   const reloaded = await store.load(playerId, 2);
   assert.equal(reloaded!.progression!.xp, 1234, "progression persists across save/load");
+  assert.equal(reloaded!.social!.disposition.vey, 24, "rapport persists across save/load");
+  assert.equal(reloaded!.social!.disposition.mara, -12, "grudge persists across save/load");
   assert.equal(reloaded!.version, SAVE_VERSION);
-  console.log("  ok — v2 save round-trips progression");
+  console.log("  ok — v3 save round-trips progression + social");
 
   await fs.rm(dir, { recursive: true, force: true });
   console.log("\n✓ migration smoke: 2 checks passed");

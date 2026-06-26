@@ -12,12 +12,14 @@
 
 import type { CharacterData } from "../../types/game";
 import type { ProgressionState } from "../../types/progression";
+import type { SocialMemory } from "../../types/social";
 
 /**
  * Current save format version. Bump when SaveData's shape changes.
- * v2 added `progression`; v1 saves are migrated on load (see SaveStore.load).
+ * v2 added `progression`; v3 added `social` (drifting NPC relationships).
+ * Older saves are migrated on load (see SaveStore.load).
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 /**
  * The full persisted state for a single character.
@@ -35,6 +37,12 @@ export interface SaveData {
    * defaults when missing, so loaded data always carries it.
    */
   progression?: ProgressionState;
+  /**
+   * Per-character drifting relationships with NPCs (npcId → rapport score).
+   * Optional on the type so v1/v2 saves still parse; SaveStore.load backfills an
+   * empty memory when missing, so loaded data always carries one.
+   */
+  social?: SocialMemory;
   /** Unix timestamp (ms) of when this save was written */
   savedAt: number;
 }

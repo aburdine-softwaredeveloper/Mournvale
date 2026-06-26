@@ -3,9 +3,10 @@
  *
  * Static world data, moved out of gameState.ts so content lives apart
  * from live session state. Each room has an artKey resolved to
- * /assets/tiles/{artKey} by the AssetRegistry — currently grayscale SVG
- * placeholders. To swap a room to raster art, drop in a PNG and add the
- * extension to its artKey (e.g. "tavern.png"); no other code changes.
+ * /assets/tiles/{artKey}.png by the AssetRegistry (PNG is the default
+ * format). The shipped tiles are greyscale placeholders — to use your own
+ * pixel art, just overwrite public/assets/tiles/{artKey}.png. No code
+ * changes needed; bare artKeys already resolve to PNG.
  *
  * Layout:
  *                       [chapel]
@@ -117,7 +118,7 @@ export const ROOMS: Record<string, Room> = {
       "altar where a single candle burns. The silence here feels deliberate, " +
       "as though the room is listening.",
     artKey: "chapel",
-    exits: { south: "north_gate" },
+    exits: { south: "north_gate", north: "fog_road" },
   },
 
   graveyard: {
@@ -173,5 +174,28 @@ export const ROOMS: Record<string, Room> = {
       "walk this way alone come back.",
     artKey: "south_road",
     exits: { north: "tavern" },
+  },
+
+  // ── The fog path — the combat ladder to the final boss ──
+  fog_road: {
+    id: "fog_road",
+    name: "The Fog Road",
+    description:
+      "Past the chapel the cobbles give way to a rutted track that the Greyfall " +
+      "has all but swallowed. Shapes lope between the dead trees — lean, grey, " +
+      "and hungry. The fog-wolves have claimed the road.",
+    artKey: "south_road",
+    exits: { south: "chapel", north: "fogheart" },
+  },
+
+  fogheart: {
+    id: "fogheart",
+    name: "The Heart of the Fog",
+    description:
+      "The Greyfall thickens until it is almost solid, coiling like a living " +
+      "thing. At its center something vast turns to face you — the source of the " +
+      "fog, the wound the whole land has been bleeding from. The Fogmother.",
+    artKey: "graveyard",
+    exits: { south: "fog_road" },
   },
 };
