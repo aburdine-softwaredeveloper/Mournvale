@@ -25,6 +25,7 @@ import { randomUUID } from "crypto";
 import { createStaticHandler } from "./httpStatic";
 import { handleCommand } from "./commands";
 import { say } from "./commands/say";
+import { look } from "./commands/look";
 import { broadcastToRoom, sendToPlayer } from "./roomUtils";
 import { players, rooms, getDisplayName, getActivePlayersInRoom, getPlayerById, getPlayerByPlayerId } from "./gameState";
 import {
@@ -40,7 +41,8 @@ import { PartyManager } from "./party/PartyManager";
 import { QuestManager } from "./quest/QuestManager";
 import { worldManager } from "./world/WorldManager";
 import { TOWN_CODEX } from "./world/townCodex";
-import { combatManager, buildPlayerCombatEntity, buildEnemyCombatEntity } from "./combat/CombatManager";
+import { combatManager, buildPlayerCombatEntity, buildEnemyFromTemplate } from "./combat/CombatManager";
+import { getEnemyTemplate } from "./combat/enemyTemplates";
 import type {
   ClientMessage,
   ServerMessage,
@@ -462,6 +464,9 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
       // typed SkillScreenMessage, which the string-returning handleCommand
       // can't do — intercept them here before falling through.
       if (handleSkillCommand(player, socket, msg.payload.input)) return;
+      // `look`/`examine` is enriched with quest-aware clues, which need the
+      // questManager — intercept before the plain string-returning pipeline.
+      if (handleLookCommand(player, socket, msg.payload.input)) return;
       // `fight` starts combat in the player's room — also needs the Player.
       if (handleFightCommand(player, socket, msg.payload.input)) return;
       // `say`/`speak`/`ask`/`chat` is the one unified speech verb — routes to a
@@ -474,6 +479,8 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
         msg.payload.input.trim().split(" ")[0]?.toLowerCase() ?? ""
       )) {
         sendRoomUpdate(player, socket);
+        // Entering a room may satisfy a non-combat quest's field objective.
+        maybeAdvanceFieldQuest(player);
       }
       return;
     }
@@ -558,6 +565,10 @@ function handleTalk(
     return;
   }
 
+  // Reporting back to a quest's turn-in NPC completes it (alongside the
+  // NPC's normal dialogue, which still plays below).
+  maybeTurnInQuest(player, npc);
+
   const charClass = player.character?.characterClass ?? "Warrior";
   const result    = worldManager.resolveTalk(charClass, npc, intent);
 
@@ -596,6 +607,50 @@ function handleTalk(
  * ignored — combat engages every hostile in the room. Returns true if the input
  * was a fight command (handled), so the caller skips the normal pipeline.
  */
+/**
+ * Handles `look` (aliases `l`/`examine`/`inspect`/`x`). Returns the enriched
+ * room view (ambient detail + notable objects, see look()/roomDetails.ts) and,
+ * when the player is standing in their active quest's objective room, appends
+ * that quest's `lookClue` — letting close inspection advance the story.
+ * Returns true if the input was a look command (handled).
+ */
+function handleLookCommand(player: Player, socket: WebSocket, input: string): boolean {
+  const verb = input.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (!["look", "l", "examine", "inspect", "x"].includes(verb)) return false;
+
+  let message = look(player.id);
+
+  const ownerKey = questOwnerKey(player);
+  const active = questManager.getActive(ownerKey);
+  const kind = active?.quest.objectiveKind ?? "clear";
+  const here = active && active.quest.objectiveRoomId === player.roomId;
+
+  if (active && here && DISCOVERABLE_KINDS.has(kind)) {
+    if (!active.objectiveMet) {
+      // First inspection: this is the discovery — grab the item / find the clue.
+      questManager.markObjectiveMet(ownerKey);
+      message += `\n\n❖ ${active.quest.lookClue ?? FIELD_OBJECTIVE_FLAVOR[kind] ?? "You find what you came for."}`;
+
+      if (active.quest.turnInNpcId) {
+        const giver = worldManager.getNpcById(active.quest.turnInNpcId);
+        const where = giver ? rooms[giver.roomId]?.name ?? giver.roomId : "the one who sent you";
+        message += `\n\nNow report back to ${giver?.name ?? "your patron"}${giver ? ` at ${where}` : ""}.`;
+        sendToPlayer(socket, { type: "system", payload: { message } });
+      } else {
+        // No turn-in step — finding it completes the quest.
+        sendToPlayer(socket, { type: "system", payload: { message } });
+        grantQuestCompletion(player, ownerKey);
+      }
+      return true;
+    }
+    // Already found it — nothing left to take here.
+    message += `\n\n❖ You've already found what you came for here. There's nothing more to see.`;
+  }
+
+  sendToPlayer(socket, { type: "system", payload: { message } });
+  return true;
+}
+
 function handleFightCommand(player: Player, socket: WebSocket, input: string): boolean {
   if (input.trim().split(/\s+/)[0]?.toLowerCase() !== "fight") return false;
 
@@ -721,6 +776,9 @@ function runNpcChat(
   const skillName = skill.charAt(0).toUpperCase() + skill.slice(1);
   const modSign = roll.roll.modifier >= 0 ? "+" : "";
 
+  // Reporting back to a quest's turn-in NPC completes it before the chat plays.
+  maybeTurnInQuest(player, npc);
+
   // Acknowledge immediately so the player isn't staring at a blank pause.
   sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} considers your words…` } });
 
@@ -805,12 +863,11 @@ export function triggerCombat(roomId: string): void {
   );
 
   const enemyEntities = hostileNpcs.map((npc, i) =>
-    buildEnemyCombatEntity({
-      id:       npc.id,
-      name:     npc.name,
-      position: { x: 3 + (i % 5), y: Math.floor(i / 5) },
-      hp:       20,
-      ac:       13,
+    buildEnemyFromTemplate({
+      id:          npc.id,
+      templateKey: npc.enemyTemplate ?? "rat",
+      name:        npc.name,
+      position:    { x: 3 + (i % 5), y: Math.floor(i / 5) },
     })
   );
 
@@ -878,8 +935,15 @@ function handleCombatSubmitAction(
   }
 
   if (isOver) {
-    const enemyCount = state.entities.filter(e => e.type === "enemy").length;
-    const xpReward   = enemyCount * 50;
+    // XP is the sum of each defeated creature's authored value (enemy entity
+    // ids are `enemy-<npcId>`; the npc id is not its template key, so we read
+    // the template the npc was spawned from). Falls back to the rat's value.
+    const enemyEntities = state.entities.filter(e => e.type === "enemy");
+    const xpReward = enemyEntities.reduce((sum, e) => {
+      const npcId = e.id.replace(/^enemy-/, "");
+      const tmplKey = worldManager.getNpcById(npcId)?.enemyTemplate;
+      return sum + getEnemyTemplate(tmplKey).xp;
+    }, 0);
     const goldReward = Math.floor(Math.random() * 15) + 5;
 
     // Award XP only on a win, and only to players who are still standing.
@@ -991,26 +1055,124 @@ function awardCombatXp(playerId: string, xp: number): void {
 function maybeCompleteRoomQuest(player: Player, roomId: string): void {
   const ownerKey = questOwnerKey(player);
   const active = questManager.getActive(ownerKey);
+  // Only "clear" (combat) quests complete by clearing a room. Field quests
+  // complete via maybeAdvanceFieldQuest / maybeTurnInQuest instead.
   if (!active || active.quest.objectiveRoomId !== roomId) return;
+  if ((active.quest.objectiveKind ?? "clear") !== "clear") return;
 
-  questManager.complete(ownerKey);
+  grantQuestCompletion(player, ownerKey);
+}
+
+/**
+ * Finalizes the owner's active quest: removes it from tracking, awards its
+ * reward XP, reports the reward, and refreshes the board. Shared by every
+ * completion path (combat clear, field turn-in, delivery).
+ *
+ * Co-op: when the quest was held by a party (ownerKey is a party id), every
+ * online party member receives the full reward XP — not just the player who
+ * struck the final blow or made the turn-in. Solo quests reward only the
+ * acting player.
+ */
+function grantQuestCompletion(player: Player, ownerKey: string): void {
+  const active = questManager.complete(ownerKey);
+  if (!active) return;
   const reward = active.quest.reward;
 
-  if (player.progression) {
-    player.progression = awardXp(player.progression, reward.xp);
-    saveProgress(player);
+  // Resolve the reward recipients: the whole party for a party quest, else
+  // just the acting player. Party members are tracked by session id.
+  const recipients = partyManager.getPartyId(player.id)
+    ? partyManager
+        .getPartyMemberIds(player.id)
+        .map((id) => getPlayerById(id))
+        .filter((p): p is Player => p !== undefined)
+    : [player];
+
+  const rewardLine =
+    `Quest complete — ${active.quest.title}! ` +
+    `Reward: ${reward.gold} gold, ${reward.xp} XP` +
+    (reward.item ? `, ${reward.item}` : "") + ".";
+
+  for (const member of recipients) {
+    if (member.progression) {
+      const before = member.progression.level;
+      member.progression = awardXp(member.progression, reward.xp);
+      saveProgress(member);
+      if (member.progression.level > before) {
+        sendToPlayer(member.socket, {
+          type: "system",
+          payload: { message: `You reached level ${member.progression.level}! Open your character screen to spend your points.` },
+        });
+      }
+    }
+    sendToPlayer(member.socket, { type: "system", payload: { message: rewardLine } });
+    sendQuestBoard(member, member.socket);
+  }
+}
+
+/**
+ * Field-objective kinds the player discovers by *looking* in the room, rather
+ * than just by walking in. These reveal their `lookClue` and complete on `look`
+ * (see handleLookCommand). "deliver" is the exception — it finishes on arrival.
+ */
+const DISCOVERABLE_KINDS = new Set(["gather", "scout", "investigate"]);
+
+/** Fallback discovery line when a discoverable quest has no authored lookClue. */
+const FIELD_OBJECTIVE_FLAVOR: Record<string, string> = {
+  gather:      "You gather what you came for, pale and cold in the grey light.",
+  scout:       "You scout the fog line, marking every shape that moves within the Greyfall.",
+  investigate: "You search the place over and find what's been wrong all along.",
+  deliver:     "You press the package into grateful, trembling hands. It's done.",
+};
+
+/**
+ * Reacts to entering a non-combat quest's objective room. Delivery finishes on
+ * arrival; the discoverable kinds (gather/scout/investigate) are NOT completed
+ * here — they're found by inspecting the room (handleLookCommand). On entry we
+ * just nudge the player to take a closer look. No-op for combat quests and for
+ * rooms that aren't the active objective.
+ */
+function maybeAdvanceFieldQuest(player: Player): void {
+  if (!player.roomId) return;
+  const ownerKey = questOwnerKey(player);
+  const active = questManager.getActive(ownerKey);
+  if (!active) return;
+
+  const kind = active.quest.objectiveKind ?? "clear";
+  if (kind === "clear") return;                                   // combat path
+  if (active.quest.objectiveRoomId !== player.roomId) return;     // wrong room
+
+  // Delivery: arriving IS the completion.
+  if (kind === "deliver") {
+    if (!questManager.markObjectiveMet(ownerKey)) return;
+    sendToPlayer(player.socket, {
+      type: "system",
+      payload: { message: FIELD_OBJECTIVE_FLAVOR.deliver! },
+    });
+    grantQuestCompletion(player, ownerKey);
+    return;
   }
 
-  sendToPlayer(player.socket, {
-    type: "system",
-    payload: {
-      message:
-        `Quest complete — ${active.quest.title}! ` +
-        `Reward: ${reward.gold} gold, ${reward.xp} XP` +
-        (reward.item ? `, ${reward.item}` : "") + ".",
-    },
-  });
-  sendQuestBoard(player, player.socket);
+  // Discoverable: don't complete on entry — point the player at `look`.
+  if (DISCOVERABLE_KINDS.has(kind) && !active.objectiveMet) {
+    sendToPlayer(player.socket, {
+      type: "system",
+      payload: { message: "Something here is worth a closer look. (Try: look)" },
+    });
+  }
+}
+
+/**
+ * Completes a field quest when the player speaks to its turn-in NPC after the
+ * objective has been met. Returns true if a turn-in happened (so the caller can
+ * still show the NPC's normal dialogue alongside the reward). No-op otherwise.
+ */
+function maybeTurnInQuest(player: Player, npc: { id: string }): boolean {
+  const ownerKey = questOwnerKey(player);
+  const active = questManager.getActive(ownerKey);
+  if (!active || active.quest.turnInNpcId !== npc.id || !active.objectiveMet) return false;
+
+  grantQuestCompletion(player, ownerKey);
+  return true;
 }
 
 /**

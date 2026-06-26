@@ -81,6 +81,14 @@ export class GameScreen {
   private readonly commandMenu: CommandMenu;
   private readonly partyPanel: PartyPanel;
   private readonly dialoguePortrait: DialoguePortrait;
+  /**
+   * Names of speakers whose conversation portraits are currently on screen.
+   * A shown portrait is "sticky": it persists through the whole exchange (the
+   * "considers your words…", the dice line, the reply) and is dismissed only
+   * when the log shows something unrelated — a different speaker, or someone
+   * entering/leaving the room. Empty when no portrait is up. See log().
+   */
+  private conversationSpeakers = new Set<string>();
   private onCommand: ((input: string) => void) | null = null;
 
   /** The local player's identity, used to label their own dialogue portrait. */
@@ -154,6 +162,10 @@ export class GameScreen {
 
   public setPartyLeaveHandler(handler: () => void): void {
     this.partyPanel.setLeaveHandler(handler);
+  }
+
+  public setPartyInviteHandler(handler: (name: string) => void): void {
+    this.partyPanel.setInviteHandler(handler);
   }
 
   public updateParty(party: PartyView | null): void {
@@ -234,7 +246,7 @@ export class GameScreen {
     this.updateRoomImage(artKey);
 
     // Leaving a room ends any in-progress conversation portraits.
-    this.dialoguePortrait.hideAll();
+    this.dismissConversationPortraits();
   }
 
   // ─────────────────────────────────────────────
@@ -258,6 +270,13 @@ export class GameScreen {
       ? composePlayerPortrait(name)
       : composeNpcPortrait(name, role);
     this.dialoguePortrait.show(side, svg, name);
+    this.conversationSpeakers.add(name);
+  }
+
+  /** Slides all conversation portraits out and forgets their speakers. */
+  private dismissConversationPortraits(): void {
+    this.dialoguePortrait.hideAll();
+    this.conversationSpeakers.clear();
   }
 
   /**
@@ -278,6 +297,34 @@ export class GameScreen {
     entry.textContent = text;
     this.messageLog.appendChild(entry);
     this.messageLog.scrollTop = this.messageLog.scrollHeight;
+
+    this.maybeDismissPortraitsForLog(text, kind);
+  }
+
+  /**
+   * Keeps a shown conversation portrait alive through its whole exchange and
+   * dismisses it when the log turns to something unrelated. The exchange is
+   * everything tied to the speaker: the "considers your words…" beat, the dice
+   * line, the spoken reply, vendor stock — all `system`/`default` lines and any
+   * `chat` from a speaker whose portrait is up. It is dismissed by:
+   *   • a `presence` line (someone entered/left) or an `error`, and
+   *   • a `chat` line from a speaker with no portrait up (a new exchange).
+   * Room changes clear it separately (see changeRoom → dismissConversationPortraits).
+   */
+  private maybeDismissPortraitsForLog(text: string, kind: LogKind): void {
+    if (this.conversationSpeakers.size === 0) return;
+
+    if (kind === "presence" || kind === "error") {
+      this.dismissConversationPortraits();
+      return;
+    }
+    if (kind === "chat") {
+      const speaker = text.slice(0, text.indexOf(":"));
+      if (!this.conversationSpeakers.has(speaker)) {
+        this.dismissConversationPortraits();
+      }
+    }
+    // system / default lines are part of the active exchange — keep the portrait.
   }
 
   // ─────────────────────────────────────────────

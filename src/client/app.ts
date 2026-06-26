@@ -130,6 +130,11 @@ class MournvaleClient {
       this.send({ type: "party_leave", payload: {} });
     });
 
+    // Wire the party panel's Invite button (replaces the `invite` command)
+    this.game.setPartyInviteHandler((name) => {
+      this.send({ type: "party_invite_send", payload: { targetName: name } });
+    });
+
     // Wire the quest board's accept / abandon / close
     this.questBoard.setHandlers({
       onAccept:  (questId) => this.send({ type: "quest_accept",   payload: { questId } }),
@@ -357,8 +362,10 @@ class MournvaleClient {
           );
         }
 
-        // NPC's dialogue lines
-        this.game.log(`— ${npc.name}, ${npc.title} —`, "presence");
+        // NPC's dialogue lines. The header is a conversation beat (not a
+        // room-presence event), so it's logged as "system" — that keeps the
+        // speaker's portrait up rather than dismissing it (see GameScreen.log).
+        this.game.log(`— ${npc.name}, ${npc.title} —`, "system");
         for (const line of npc.dialogue) {
           this.game.log(`${npc.name}: ${line.text}`, "chat");
         }
@@ -491,20 +498,8 @@ class MournvaleClient {
     const arg = rest.join(" ").trim();
 
     switch (verb?.toLowerCase()) {
-      case "party":
-        this.game.log("Your party roster is shown in the LOCATION panel.", "system");
-        return;
-
       case "leave":
         this.send({ type: "party_leave", payload: {} });
-        return;
-
-      case "invite":
-        if (!arg) {
-          this.game.log("Invite whom? Try: invite <name>", "system");
-          return;
-        }
-        this.send({ type: "party_invite_send", payload: { targetName: arg } });
         return;
 
       case "quests":

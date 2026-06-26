@@ -18,9 +18,14 @@
 
 type Side = "left" | "right";
 
-/** How long a portrait stays before sliding out. Generous so it survives a
- *  slow NPC reply (the LLM brain can take several seconds to respond). */
-const HOLD_MS = 9000;
+/**
+ * Safety net only. Portraits are now sticky — they stay until the conversation
+ * is over (a new speaker, the player leaving the room, etc.), which the owner
+ * (GameScreen) decides by watching the log. This long timeout just guarantees a
+ * portrait never gets stuck forever if a dismissal signal is somehow missed; it
+ * is deliberately far longer than any LLM reply + read time.
+ */
+const SAFETY_HIDE_MS = 45000;
 
 interface Slot {
   wrap: HTMLElement;
@@ -77,7 +82,7 @@ export class DialoguePortrait {
     slot.wrap.classList.add("dlg-portrait-in");
 
     if (slot.hideTimer !== null) clearTimeout(slot.hideTimer);
-    slot.hideTimer = window.setTimeout(() => this.hide(side), HOLD_MS);
+    slot.hideTimer = window.setTimeout(() => this.hide(side), SAFETY_HIDE_MS);
   }
 
   /** Slides the given side slot back out. */

@@ -35,71 +35,122 @@ export const AUTHORED_QUESTS: Quest[] = [
     recommendedSize: 1,
     generated: false,
     objectiveRoomId: "cellar",
+    objectiveKind: "clear",
   },
   {
     id: "authored-fog-scout",
     title: "Into the Greyfall",
     description:
-      "A merchant caravan vanished on the north road three days past. " +
-      "Scout the fog line and report what you find. Do not go alone.",
+      "A merchant caravan vanished on the south road three days past. Follow " +
+      "the road to the fog line, scout what became of them, and report back to " +
+      "Captain Vey at the guard post.",
     giver: "Captain Vey",
     difficulty: "Moderate",
-    participation: "party",
+    participation: "either",
     reward: { gold: 80, xp: 120, item: "Lantern of Warding" },
     recommendedSize: 3,
     generated: false,
+    objectiveRoomId: "south_road",
+    objectiveKind: "scout",
+    turnInNpcId: "captain_vey",
+    lookClue:
+      "You crouch by the ruts where the cart-tracks stop dead. No mud thrown, " +
+      "no struggle — the wheels simply leave the ground. Among the moss you find " +
+      "the caravan's strongbox, forced open and emptied, and a driver's glove " +
+      "with the fingers frozen mid-grasp. Whatever took them, it came from above " +
+      "the road, out of the fog. Captain Vey will want to hear this.",
   },
   {
     id: "authored-herbs",
     title: "The Healer's Request",
     description:
-      "Sister Mara needs moonpetal blossoms from the old churchyard to " +
-      "treat the sick. They only bloom after dark.",
+      "Sister Mara needs moonpetal blossoms from the old churchyard to treat " +
+      "the sick. Gather them from the graveyard, then bring them to her at the " +
+      "chapel.",
     giver: "Sister Mara",
     difficulty: "Easy",
     participation: "either",
     reward: { gold: 35, xp: 50 },
     recommendedSize: 2,
     generated: false,
+    objectiveRoomId: "graveyard",
+    objectiveKind: "gather",
+    turnInNpcId: "sister_mara",
+    lookClue:
+      "The moonpetals grow thickest in the lee of the oldest stones, just as " +
+      "Sister Mara said — pale cups that drink the dark. You gather the freshest " +
+      "blooms with care; bruise them and the sap turns bitter and useless. A " +
+      "handful should be enough for her draughts.",
   },
   {
     id: "authored-bell",
     title: "The Silent Bell",
     description:
-      "The chapel bell has not rung since the Greyfall. Climb the tower, " +
-      "find what stops it, and make it sound again.",
+      "The chapel bell has not rung since the Greyfall. Search the chapel for " +
+      "what silenced it, then return to Old Hollis in the graveyard with what " +
+      "you find.",
     giver: "Old Hollis",
     difficulty: "Hard",
-    participation: "party",
+    participation: "either",
     reward: { gold: 150, xp: 240, item: "Bellringer's Seal" },
     recommendedSize: 4,
     generated: false,
+    objectiveRoomId: "chapel",
+    objectiveKind: "investigate",
+    turnInNpcId: "old_hollis",
+    lookClue:
+      "You climb to the belfry and find the bell whole — but something is wedged " +
+      "in its throat: a knot of grey, fibrous matter, cold as grave-dirt and " +
+      "faintly breathing. It drinks the sound before the bell can make it. You " +
+      "work a sample free with your knife. Old Hollis kept the chapel for forty " +
+      "years; he should see this.",
   },
   {
     id: "authored-wolves",
     title: "Fog-Wolves at the Gate",
     description:
       "Captain Vey reports fog-wolves circling the north gate after dark. " +
-      "Thin the pack before they grow bold enough to breach the wall.",
+      "Follow the fog road past the chapel and thin the pack before they grow " +
+      "bold enough to breach the wall.",
     giver: "Captain Vey",
     difficulty: "Moderate",
     participation: "either",
     reward: { gold: 70, xp: 100 },
     recommendedSize: 2,
     generated: false,
+    objectiveRoomId: "fog_road",
+    objectiveKind: "clear",
+  },
+  {
+    id: "authored-fog-boss",
+    title: "The Heart of the Fog",
+    description:
+      "The Greyfall has a source, and it is awake. Follow the fog road to its " +
+      "end and face the Fogmother. Win, and the fog lifts from the land. This " +
+      "is no fight to take lightly, or alone.",
+    giver: "Old Hollis",
+    difficulty: "Perilous",
+    participation: "party",
+    reward: { gold: 500, xp: 600, item: "Fogbreaker's Crown" },
+    recommendedSize: 4,
+    generated: false,
+    objectiveRoomId: "fogheart",
+    objectiveKind: "clear",
   },
   {
     id: "authored-delivery",
     title: "Bitter Medicine",
     description:
-      "Isolde has a healing draught promised to a shut-in across the square. " +
-      "Deliver it before nightfall — and don't drink it yourself.",
+      "Isolde has a healing draught promised to a shut-in across the market " +
+      "square. Carry it there before nightfall — and don't drink it yourself.",
     giver: "Isolde",
     difficulty: "Trivial",
     participation: "solo",
     reward: { gold: 20, xp: 30 },
     recommendedSize: 1,
     generated: false,
+    objectiveRoomId: "market_square",
+    objectiveKind: "deliver",
   },
 ];
 

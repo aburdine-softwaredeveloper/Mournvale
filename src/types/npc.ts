@@ -105,6 +105,12 @@ export interface NPC {
   dialogue: NpcDialogue[];
   /** Quest ids this NPC offers (questgiver role) */
   questIds?: string[];
+  /**
+   * For hostile NPCs: which monster template (enemyTemplates.ts) supplies this
+   * combatant's stats. Defaults to the weakest (rat) if omitted, so a hostile
+   * is never accidentally spawned as a full Warrior.
+   */
+  enemyTemplate?: string;
   /** Goods for sale (vendor role) */
   stock?: VendorItem[];
   /**

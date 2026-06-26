@@ -984,6 +984,44 @@ html, body {
   padding: 5px 8px;
 }
 
+/* INVITE control — lives beneath the PARTY roster (replaces the
+   removed `invite`/`party` text commands). */
+.party-invite {
+  margin-top: 8px;
+}
+
+.party-invite-toggle {
+  font-size: 7px;
+  padding: 5px 8px;
+  width: 100%;
+}
+
+.party-invite-form {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.party-invite-form.hidden {
+  display: none;
+}
+
+.party-invite-input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 7px;
+  padding: 4px 6px;
+  color: var(--color-text);
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+}
+
+.party-invite-send {
+  font-size: 7px;
+  padding: 4px 6px;
+}
+
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    OVERLAYS
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */

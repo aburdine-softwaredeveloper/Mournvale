@@ -74,6 +74,7 @@ export const NPCS: NPC[] = [
     title: "Vermin",
     role: "hostile",
     roomId: "cellar",
+    enemyTemplate: "rat",
     dialogue: [{ text: "It bares yellow teeth and hisses." }],
   },
   {
@@ -82,6 +83,7 @@ export const NPCS: NPC[] = [
     title: "Vermin",
     role: "hostile",
     roomId: "cellar",
+    enemyTemplate: "rat",
     dialogue: [{ text: "It bares yellow teeth and hisses." }],
   },
   {
@@ -90,6 +92,7 @@ export const NPCS: NPC[] = [
     title: "Pack Leader",
     role: "hostile",
     roomId: "cellar",
+    enemyTemplate: "rat_bold",
     dialogue: [{ text: "Larger than the rest, it stands its ground." }],
   },
 
@@ -296,5 +299,45 @@ export const NPCS: NPC[] = [
         },
       },
     ],
+  },
+
+  // ── Fog Road (hostile — the "Fog-Wolves at the Gate" quest encounter) ──
+  {
+    id: "fog_wolf_1",
+    name: "Fog-Wolf",
+    title: "Pack Hunter",
+    role: "hostile",
+    roomId: "fog_road",
+    enemyTemplate: "fog_wolf",
+    dialogue: [{ text: "It circles low, hackles raised, breath steaming in the cold." }],
+  },
+  {
+    id: "fog_wolf_2",
+    name: "Fog-Wolf",
+    title: "Pack Hunter",
+    role: "hostile",
+    roomId: "fog_road",
+    enemyTemplate: "fog_wolf",
+    dialogue: [{ text: "It circles low, hackles raised, breath steaming in the cold." }],
+  },
+  {
+    id: "fog_wolf_alpha",
+    name: "Pack Alpha",
+    title: "Greyfall Beast",
+    role: "hostile",
+    roomId: "fog_road",
+    enemyTemplate: "fog_wolf_alpha",
+    dialogue: [{ text: "Larger than the rest, scarred and grey, it does not fear you." }],
+  },
+
+  // ── The Heart of the Fog (hostile — the final boss encounter) ──
+  {
+    id: "the_fogmother",
+    name: "The Fogmother",
+    title: "Heart of the Greyfall",
+    role: "hostile",
+    roomId: "fogheart",
+    enemyTemplate: "fog_boss",
+    dialogue: [{ text: "A voice like wind through gravestones: \"You are small, and the fog is old.\"" }],
   },
 ];
