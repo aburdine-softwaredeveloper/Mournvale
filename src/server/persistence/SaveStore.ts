@@ -26,6 +26,7 @@ import {
 } from "./saveTypes";
 import type { CharacterClass } from "../../types/network";
 import { newProgression } from "../../types/progression";
+import { newSocialMemory } from "../social/disposition";
 
 // ─────────────────────────────────────────────
 // INTERFACE
@@ -141,6 +142,11 @@ export class JsonFileSaveStore implements SaveStore {
           parsed.character.characterClass as CharacterClass
         );
       }
+      // Migration: v2 saves predate `social`. Backfill an empty relationship
+      // memory so loaded data always carries one (a stranger to everyone).
+      if (!parsed.social) {
+        parsed.social = newSocialMemory();
+      }
       parsed.version = SAVE_VERSION;
 
       return parsed;
@@ -191,13 +197,15 @@ export class JsonFileSaveStore implements SaveStore {
 export function buildSaveData(
   character: SaveData["character"],
   roomId: string,
-  progression?: SaveData["progression"]
+  progression?: SaveData["progression"],
+  social?: SaveData["social"]
 ): SaveData {
   return {
     version: SAVE_VERSION,
     character,
     roomId,
     ...(progression && { progression }),
+    ...(social && { social }),
     savedAt: Date.now(),
   };
 }

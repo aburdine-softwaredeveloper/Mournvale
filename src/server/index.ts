@@ -52,12 +52,19 @@ import type { TalkIntent, NPC } from "../types/npc";
 import type { Player } from "../types/game";
 import type { CharacterClass, Skill } from "../types/character";
 import { buildCharacterStats } from "../types/character";
-import { rollSkillCheck } from "./skills/SkillEngine";
+import { rollSkillCheck, type CheckTier } from "./skills/SkillEngine";
 import { NpcChatService } from "./dialogue/NpcChatService";
 import { OllamaBrain } from "./dialogue/OllamaBrain";
 import { ScriptedBrain } from "./dialogue/ScriptedBrain";
 import { inferIntent, skillForIntent, TIER_LABEL } from "./dialogue/NpcBrain";
 import { buildPlayerContext } from "./dialogue/playerContext";
+import {
+  newSocialMemory, dispositionWith, applyTalkOutcome,
+  dispositionDcModifier, dispositionGuidance, bandChangeNotice,
+} from "./social/disposition";
+import {
+  rumorMill, rumorInfluence, clampReputation, buildRumorContext,
+} from "./social/rumors";
 import {
   newProgression, awardXp, levelForXp,
   spendTalentPoint, spendAttributePoint, equipAbility, unequipSlot, ABILITY_SLOTS,
@@ -212,7 +219,7 @@ server.on("connection", (socket: WebSocket) => {
       currentPlayer.playerId &&
       currentPlayer.activeSlot
     ) {
-      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId, currentPlayer.progression);
+      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId, currentPlayer.progression, currentPlayer.social);
       const { playerId, activeSlot } = currentPlayer;
       saveStore
         .save(playerId, activeSlot, data)
@@ -314,6 +321,7 @@ async function handleMenuMessage(
       // load() migrates v1 saves, so progression is always present; fall back
       // defensively just in case.
       player.progression = data.progression ?? newProgression(data.character.characterClass);
+      player.social      = data.social ?? newSocialMemory();
       player.roomId      = rooms[data.roomId] ? data.roomId : "tavern";
       player.state       = "active";
 
@@ -408,6 +416,7 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
       const character  = finalizeDraft(player.draft);
       player.character = character;
       player.progression = newProgression(character.characterClass);
+      player.social    = newSocialMemory();
       player.state     = "active";
       player.roomId    = "tavern";
 
@@ -436,7 +445,7 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
       });
 
       if (player.playerId && player.activeSlot) {
-        const data = buildSaveData(character, player.roomId, player.progression);
+        const data = buildSaveData(character, player.roomId, player.progression, player.social);
         const { playerId, activeSlot } = player;
         saveStore
           .save(playerId, activeSlot, data)
@@ -481,6 +490,9 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
         sendRoomUpdate(player, socket);
         // Entering a room may satisfy a non-combat quest's field objective.
         maybeAdvanceFieldQuest(player);
+        // A player moving is the town's heartbeat: advance gossip one hop so
+        // word of deeds (and misdeeds) travels NPC→NPC over time.
+        rumorMill.propagate();
       }
       return;
     }
@@ -754,6 +766,35 @@ function capitalize(s: string): string {
 }
 
 /**
+ * Turns a notable conversational moment into town gossip, seeded at the NPC the
+ * player just spoke to. Only the memorable approaches travel: leaning on someone
+ * (threat), getting caught in a lie (botched deceive), or charming them utterly
+ * (a crit persuade). Ordinary talk leaves no rumor. Dedup lives in RumorMill, so
+ * repeatedly threatening the same person doesn't flood the town.
+ */
+function maybeRecordConversationRumor(
+  player: Player,
+  npc: NPC,
+  intent: TalkIntent,
+  tier: CheckTier
+): void {
+  if (!player.playerId || !player.character) return;
+  const base = {
+    subjectPlayerId: player.playerId,
+    subjectName: player.character.name,
+    originNpcId: npc.id,
+  };
+
+  if (intent === "intimidate") {
+    rumorMill.record({ ...base, kind: "threat", detail: `they put hard words to ${npc.name}` });
+  } else if (intent === "deceive" && tier === "crit_fail") {
+    rumorMill.record({ ...base, kind: "lie", detail: `${npc.name} caught them in a barefaced lie` });
+  } else if (intent === "persuade" && tier === "crit_success") {
+    rumorMill.record({ ...base, kind: "charm", detail: `they talked ${npc.name} round sweet as honey` });
+  }
+}
+
+/**
  * Runs a free-text NPC conversation: rolls the d20 conversational check
  * (server-authoritative), then asks the NpcChatService to render the NPC's
  * words conditioned on the result tier. Acknowledges immediately and delivers
@@ -771,7 +812,33 @@ function runNpcChat(
   // otherwise the approach is read from the player's own words.
   const intent = explicitIntent ?? inferIntent(message);
   const skill = skillForIntent(intent) as Skill;
-  const roll = rollSkillCheck(buildCharacterStats(charClass), skill, NPC_CHAT_DC);
+
+  // Drifting relationship: how this NPC already feels about the player both
+  // bends the check's difficulty (warm NPCs are easier to sway) and, below,
+  // shifts based on how this exchange lands — kindness compounds, a lean on
+  // someone costs you rapport. Defensive default for pre-v3 sessions.
+  if (!player.social) player.social = newSocialMemory();
+  const priorScore = dispositionWith(player.social, npc.id);
+
+  // Reputation that precedes them: rumors THIS npc has heard about the player
+  // transiently color this conversation (a stranger whose deeds — or misdeeds —
+  // outran them). Rumor influence is never baked into stored rapport; only
+  // face-to-face dealings persist (applyTalkOutcome reads priorScore directly).
+  const heardRumors = player.playerId ? rumorMill.knownBy(npc.id, player.playerId) : [];
+  const effectiveScore = clampReputation(priorScore + rumorInfluence(heardRumors));
+  const effectiveDc = Math.max(2, NPC_CHAT_DC + dispositionDcModifier(effectiveScore));
+  const roll = rollSkillCheck(buildCharacterStats(charClass), skill, effectiveDc);
+
+  // Fold the outcome into the relationship now (the tier is known immediately;
+  // it doesn't depend on the LLM) and persist it. The shift is captured so the
+  // .then() below can announce a relationship that visibly crossed a band.
+  const shift = applyTalkOutcome(player.social, npc.id, intent, roll.tier);
+  player.social = shift.memory;
+  saveProgress(player);
+
+  // This exchange itself becomes talk: leaning on someone, getting caught in a
+  // lie, or charming them spreads from THIS npc out across the town graph.
+  maybeRecordConversationRumor(player, npc, intent, roll.tier);
 
   const skillName = skill.charAt(0).toUpperCase() + skill.slice(1);
   const modSign = roll.roll.modifier >= 0 ? "+" : "";
@@ -808,17 +875,30 @@ function runNpcChat(
     ...(player.progression ? { level: player.progression.level } : {}),
   });
 
+  // The NPC's standing feeling toward the player coming into this conversation
+  // (direct rapport tempered by what they've heard), so the LLM speaks with the
+  // warmth or wariness the player has actually earned — by deed and by reputation.
+  const dispositionContext = dispositionGuidance(effectiveScore);
+  const rumorContext = buildRumorContext(heardRumors) ?? undefined;
+
   void npcChat
-    .respond(player.id, { npc, playerName, playerClass: charClass, message, skill, intent, tier: roll.tier, roomName, worldContext: TOWN_CODEX, playerContext })
+    .respond(player.id, { npc, playerName, playerClass: charClass, message, skill, intent, tier: roll.tier, roomName, worldContext: TOWN_CODEX, playerContext, dispositionContext, ...(rumorContext && { rumorContext }) })
     .then(({ reply }) => {
       // The dice reveal (so the d20 is visible), then the NPC's spoken line.
       sendToPlayer(socket, {
         type: "system",
         payload: {
-          message: `${skillName} — ${roll.roll.result} ${modSign}${roll.roll.modifier} = ${roll.roll.total} vs DC ${NPC_CHAT_DC} — ${TIER_LABEL[roll.tier]}`,
+          message: `${skillName} — ${roll.roll.result} ${modSign}${roll.roll.modifier} = ${roll.roll.total} vs DC ${effectiveDc} — ${TIER_LABEL[roll.tier]}`,
         },
       });
       sendToPlayer(socket, { type: "chat", payload: { speaker: npc.name, message: reply } });
+
+      // If this exchange visibly moved the relationship into a new band, say so —
+      // the player feels the NPC warming to them or souring across visits.
+      const moodLine = bandChangeNotice(npc.name, shift);
+      if (moodLine) {
+        sendToPlayer(socket, { type: "system", payload: { message: moodLine } });
+      }
 
       // Authored mechanical payoff: if this NPC has a branch for the approach
       // taken, the rolled tier can still reveal lore / nudge a quest — the dice
@@ -1106,6 +1186,19 @@ function grantQuestCompletion(player: Player, ownerKey: string): void {
     }
     sendToPlayer(member.socket, { type: "system", payload: { message: rewardLine } });
     sendQuestBoard(member, member.socket);
+
+    // Finishing the work becomes good talk: seed a "deed" rumor at the NPC who
+    // posted it, so word of a reliable hand spreads warmth across the town.
+    const giverNpcId = worldManager.getQuestGiverNpcId(active.quest.id);
+    if (giverNpcId && member.playerId && member.character) {
+      rumorMill.record({
+        subjectPlayerId: member.playerId,
+        subjectName: member.character.name,
+        originNpcId: giverNpcId,
+        kind: "deed",
+        detail: `saw "${active.quest.title}" through`,
+      });
+    }
   }
 }
 
@@ -1182,7 +1275,7 @@ function maybeTurnInQuest(player: Player, npc: { id: string }): boolean {
  */
 function saveProgress(player: Player): void {
   if (!player.playerId || !player.activeSlot || !player.character || !player.roomId) return;
-  const data = buildSaveData(player.character, player.roomId, player.progression);
+  const data = buildSaveData(player.character, player.roomId, player.progression, player.social);
   const { playerId, activeSlot } = player;
   saveStore
     .save(playerId, activeSlot, data)

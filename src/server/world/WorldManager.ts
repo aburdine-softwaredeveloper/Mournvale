@@ -84,6 +84,14 @@ class WorldManager {
     return this.byId.get(id);
   }
 
+  /** The id of the NPC who posts a given quest (questgiver), if any. */
+  getQuestGiverNpcId(questId: string): string | undefined {
+    for (const npc of this.byId.values()) {
+      if (npc.questIds?.includes(questId)) return npc.id;
+    }
+    return undefined;
+  }
+
   getNpcsInRoom(roomId: string): NPC[] {
     return this.byRoom.get(roomId) ?? [];
   }
