@@ -19,7 +19,7 @@
  * All outgoing commands flow through the onCommand callback.
  */
 
-import { CommandMenu, DEFAULT_COMMANDS, VERTICAL_COMMANDS, type CommandDefinition } from "../components/CommandMenu";
+import { CommandMenu, DEFAULT_COMMANDS, VERTICAL_COMMANDS, TRADE_COMMAND, type CommandDefinition } from "../components/CommandMenu";
 import { PartyPanel } from "../components/PartyPanel";
 import { CharacterPanel } from "../components/CharacterPanel";
 import { TalentTreePanel } from "../components/TalentTreePanel";
@@ -240,7 +240,7 @@ export class GameScreen {
     this.roomDesc.textContent  = description;
     this.roomExits.textContent = exits.length > 0 ? exits.join(", ") : "none";
 
-    this.updateVerticalCommands(exits);
+    this.updateContextualCommands(exits, npcs);
     this.expandedNpcId = null;
     this.renderNpcs(npcs);
     this.updateRoomImage(artKey);
@@ -284,10 +284,12 @@ export class GameScreen {
    * Horizontal movement stays always-on (the N/S/E/W buttons), matching the
    * existing UX; only vertical movement is gated on availability.
    */
-  private updateVerticalCommands(exits: string[]): void {
+  private updateContextualCommands(exits: string[], npcs: NpcView[]): void {
     const contextual: CommandDefinition[] = [];
     if (exits.includes("up"))   contextual.push(VERTICAL_COMMANDS.up);
     if (exits.includes("down")) contextual.push(VERTICAL_COMMANDS.down);
+    // A Trade button appears only where there's a vendor to trade with.
+    if (npcs.some(n => n.role === "vendor")) contextual.push(TRADE_COMMAND);
     this.commandMenu.setContextual(contextual);
   }
 

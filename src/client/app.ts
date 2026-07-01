@@ -32,6 +32,8 @@ import { CharacterCreationScreen } from "./screens/CharacterCreationScreen";
 import { GameScreen } from "./screens/GameScreen";
 import { CombatScreen } from "./screens/CombatScreen";
 import { QuestBoard } from "./components/QuestBoard";
+import { InventoryPanel } from "./components/InventoryPanel";
+import { ShopPanel } from "./components/ShopPanel";
 import { InvitePrompt } from "./components/InvitePrompt";
 import type { PortraitSpec } from "../engine/assets/PortraitCompositor";
 import type {
@@ -72,6 +74,8 @@ class MournvaleClient {
   private readonly creation = new CharacterCreationScreen();
   private readonly game = new GameScreen();
   private readonly questBoard = new QuestBoard();
+  private readonly inventoryPanel = new InventoryPanel();
+  private readonly shopPanel = new ShopPanel();
   private readonly invitePrompt = new InvitePrompt();
 
   /** Buffers character draft locally for the final character_create send */
@@ -136,6 +140,18 @@ class MournvaleClient {
     });
 
     // Wire the quest board's accept / abandon / close
+    this.inventoryPanel.setHandlers({
+      onAction: (action, itemId, slot) =>
+        this.send({ type: "inventory_action", payload: { action, ...(itemId && { itemId }), ...(slot && { slot }) } }),
+      onClose: () => { /* nothing extra to do on close */ },
+    });
+
+    this.shopPanel.setHandlers({
+      onAction: (action, vendorId, itemId) =>
+        this.send({ type: "shop_action", payload: { action, vendorId, itemId } }),
+      onClose: () => { /* nothing extra to do on close */ },
+    });
+
     this.questBoard.setHandlers({
       onAccept:  (questId) => this.send({ type: "quest_accept",   payload: { questId } }),
       onAbandon: ()        => this.send({ type: "quest_abandon",  payload: {} }),
@@ -335,6 +351,16 @@ class MournvaleClient {
 
       case "skill_screen":
         this.game.openSkillScreen(msg.payload);
+        break;
+
+      case "inventory_screen":
+        this.inventoryPanel.render(msg.payload);
+        this.inventoryPanel.show();
+        break;
+
+      case "shop_screen":
+        this.shopPanel.render(msg.payload);
+        this.shopPanel.show();
         break;
 
       // ── Phase 2: NPC interaction with optional skill check display ─────────

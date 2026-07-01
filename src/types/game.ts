@@ -14,6 +14,7 @@ import { WebSocket } from "ws";
 import type { PlayerState, CharacterDraft, CharacterClass, Gender } from "./network";
 import type { ProgressionState } from "./progression";
 import type { SocialMemory } from "./social";
+import type { Inventory } from "./items";
 
 // ─────────────────────────────────────────────
 // PLAYER
@@ -97,6 +98,13 @@ export interface Player {
    * through server/social/disposition.ts helpers. Present when state === "active".
    */
   social?: SocialMemory;
+
+  /**
+   * The character's purse and pack (gold, carried items, equipped gear). Scoped
+   * to `activeSlot`, created at finalization and loaded from the save. Mutated
+   * only through types/items.ts helpers. Present when state === "active".
+   */
+  inventory?: Inventory;
 }
 
 // ─────────────────────────────────────────────

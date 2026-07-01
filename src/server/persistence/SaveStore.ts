@@ -27,6 +27,7 @@ import {
 import type { CharacterClass } from "../../types/network";
 import { newProgression } from "../../types/progression";
 import { newSocialMemory } from "../social/disposition";
+import { newInventory } from "../../types/items";
 
 // ─────────────────────────────────────────────
 // INTERFACE
@@ -147,6 +148,10 @@ export class JsonFileSaveStore implements SaveStore {
       if (!parsed.social) {
         parsed.social = newSocialMemory();
       }
+      // Migration: v3 saves predate `inventory`. Backfill an empty purse/pack.
+      if (!parsed.inventory) {
+        parsed.inventory = newInventory();
+      }
       parsed.version = SAVE_VERSION;
 
       return parsed;
@@ -198,7 +203,8 @@ export function buildSaveData(
   character: SaveData["character"],
   roomId: string,
   progression?: SaveData["progression"],
-  social?: SaveData["social"]
+  social?: SaveData["social"],
+  inventory?: SaveData["inventory"]
 ): SaveData {
   return {
     version: SAVE_VERSION,
@@ -206,6 +212,7 @@ export function buildSaveData(
     roomId,
     ...(progression && { progression }),
     ...(social && { social }),
+    ...(inventory && { inventory }),
     savedAt: Date.now(),
   };
 }

@@ -17,6 +17,7 @@
 
 import { ROOMS } from "./rooms";
 import { NPCS  } from "./npcs";
+import { resolveStock } from "./vendor";
 import type { Room } from "../../types/game";
 import type { NPC, NpcView, NpcInteractionView, TalkIntent } from "../../types/npc";
 import { TALK_INTENT_SKILL } from "../../types/npc";
@@ -126,7 +127,7 @@ class WorldManager {
       role:     npc.role,
       dialogue: npc.dialogue,
       questIds: npc.questIds ?? [],
-      stock:    npc.stock    ?? [],
+      stock:    resolveStock(npc),
     };
   }
 

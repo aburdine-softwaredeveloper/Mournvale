@@ -84,6 +84,14 @@ export interface ClassAbility {
   description: string;
   type: "passive" | "active";
   targetType?: "self" | "enemy" | "ally";
+  /**
+   * Tile range (Manhattan) at which this ability can reach a target. Optional —
+   * see abilityRange() for the default (self abilities ignore range; offensive
+   * abilities default to your weapon's reach; support defaults to a short throw).
+   * Set explicitly only when an ability's reach differs from that default, e.g. a
+   * ranged spell cast by a melee-weapon class.
+   */
+  range?: number;
   /** 0 = at-will, >0 = limited use per session */
   cooldownRounds: number;
   combatOnly: boolean;
@@ -209,21 +217,21 @@ export const CLASS_ABILITIES: Record<CharacterClass, ClassAbility[]> = {
     {
       id: "sacred_flame", name: "Sacred Flame",
       description: "Radiant energy washes over the target: 1d8 radiant damage on a failed DEX save.",
-      type: "active", targetType: "enemy",
+      type: "active", targetType: "enemy", range: 5,
       cooldownRounds: 0, combatOnly: true,
       effect: { damage: "1d8" }, baseline: true,
     },
     {
       id: "cure_wounds", name: "Cure Wounds",
       description: "A potent touch restoring 2d8 + WIS HP to an ally.",
-      type: "active", targetType: "ally",
+      type: "active", targetType: "ally", range: 1,
       cooldownRounds: 4, combatOnly: false,
       effect: { heal: "2d8+wis" },
     },
     {
       id: "guiding_bolt", name: "Guiding Bolt",
       description: "A lance of light: 4d6 radiant damage to a single foe.",
-      type: "active", targetType: "enemy",
+      type: "active", targetType: "enemy", range: 6,
       cooldownRounds: 3, combatOnly: true,
       effect: { damage: "4d6" },
     },
@@ -341,7 +349,7 @@ export const CLASS_ABILITIES: Record<CharacterClass, ClassAbility[]> = {
     {
       id: "fireball", name: "Fireball",
       description: "A roaring blast: 6d6 fire damage to the target and everything around it; survivors burn.",
-      type: "active", targetType: "enemy",
+      type: "active", targetType: "enemy", range: 6,
       cooldownRounds: 5, combatOnly: true,
       effect: { damage: "6d6", condition: "burning" },
     },
@@ -439,6 +447,29 @@ export function abilityById(
  */
 export function baselineAbilityIds(charClass: CharacterClass): string[] {
   return CLASS_ABILITIES[charClass].filter(a => a.baseline).map(a => a.id);
+}
+
+/** Default reach for support abilities with no explicit `range` (a short throw). */
+export const DEFAULT_SUPPORT_RANGE = 6;
+
+/**
+ * The tile range at which an ability can reach a target. Single source of truth
+ * for both the server's range gate and the client's range shading, so they never
+ * disagree:
+ *   - self abilities ignore range entirely (they target the caster) → Infinity.
+ *   - an explicit `range` always wins.
+ *   - offensive (enemy) abilities default to the caster's WEAPON reach, so a
+ *     melee class throws its strikes 1 tile and an archer/mage reaches further.
+ *   - support (ally) abilities default to a short throw (DEFAULT_SUPPORT_RANGE).
+ */
+export function abilityRange(
+  ability: Pick<ClassAbility, "range" | "targetType">,
+  weaponRange: number
+): number {
+  if (ability.targetType === "self" || ability.targetType === undefined) return Infinity;
+  if (ability.range !== undefined) return ability.range;
+  if (ability.targetType === "ally") return DEFAULT_SUPPORT_RANGE;
+  return weaponRange;
 }
 
 // ─── CharacterStats ───────────────────────────────────────────────────────────

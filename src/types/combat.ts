@@ -22,13 +22,76 @@ export interface GridPosition {
   y: number;  // 0-indexed row,    0 = top
 }
 
-export type GridCellType = "floor" | "wall" | "obstacle" | "door";
+/**
+ * Tile kinds. The first four are the original passable floor / blocking set;
+ * the last three are *tactical terrain* that changes how the board plays:
+ *   - rubble  → difficult terrain: passable, but costs 2 movement to enter.
+ *   - embers  → hazard: passable, but burns anything that ends its move on it.
+ *   - cover   → passable, and grants its occupant an AC bonus (you fight from it).
+ *   - barrel / crate → plain impassable scenery (basement props): no effect
+ *     beyond blocking a tile, so a humble room reads as a humble room.
+ * Terrain behavior is data-driven via TERRAIN below, so adding a tile kind is a
+ * one-line table edit that both the server math and the client renderer read.
+ */
+export type GridCellType =
+  | "floor" | "wall" | "obstacle" | "door"
+  | "rubble" | "embers" | "cover"
+  | "barrel" | "crate";
 
 export interface GridCell {
   type: GridCellType;
   passable: boolean;
   /** Id of entity currently occupying this cell, if any. */
   entityId?: string;
+}
+
+// ─── Tactical terrain (shared by server math + client renderer) ─────────────────
+
+/** Declarative properties of one tile kind. */
+export interface TerrainMeta {
+  passable: boolean;
+  /** Movement points to ENTER this tile (difficult terrain costs more). */
+  moveCost: number;
+  /** AC bonus granted to an entity standing on this tile. */
+  coverBonus: number;
+  /** Fire damage dealt when an entity ends its move here (0 = none). */
+  hazardDamage: number;
+  /** Short player-facing name, e.g. for tile tooltips. */
+  label: string;
+}
+
+/**
+ * The single source of truth for what each tile kind does. Pure data — both
+ * CombatManager (movement cost, cover AC, hazard ticks) and CombatScreen
+ * (rendering, reachable-tile math, tooltips) read from this so the two never
+ * disagree about the rules of the board.
+ */
+export const TERRAIN: Record<GridCellType, TerrainMeta> = {
+  floor:    { passable: true,  moveCost: 1, coverBonus: 0, hazardDamage: 0, label: "Floor" },
+  door:     { passable: true,  moveCost: 1, coverBonus: 0, hazardDamage: 0, label: "Doorway" },
+  wall:     { passable: false, moveCost: 1, coverBonus: 0, hazardDamage: 0, label: "Wall" },
+  obstacle: { passable: false, moveCost: 1, coverBonus: 0, hazardDamage: 0, label: "Obstacle" },
+  rubble:   { passable: true,  moveCost: 2, coverBonus: 0, hazardDamage: 0, label: "Rubble (slow)" },
+  embers:   { passable: true,  moveCost: 1, coverBonus: 0, hazardDamage: 4, label: "Embers (burns)" },
+  cover:    { passable: true,  moveCost: 1, coverBonus: 2, hazardDamage: 0, label: "Cover (+2 AC)" },
+  barrel:   { passable: false, moveCost: 1, coverBonus: 0, hazardDamage: 0, label: "Barrel" },
+  crate:    { passable: false, moveCost: 1, coverBonus: 0, hazardDamage: 0, label: "Crate" },
+};
+
+/** Movement points needed to enter a tile (∞ for impassable). */
+export function entryCost(type: GridCellType): number {
+  const meta = TERRAIN[type];
+  return meta.passable ? meta.moveCost : Infinity;
+}
+
+/** AC bonus an entity gains from the tile it occupies. */
+export function coverBonus(type: GridCellType): number {
+  return TERRAIN[type].coverBonus;
+}
+
+/** Fire damage for ending a move on a tile (0 if harmless). */
+export function hazardDamage(type: GridCellType): number {
+  return TERRAIN[type].hazardDamage;
 }
 
 // ─── Entities ─────────────────────────────────────────────────────────────────
@@ -79,6 +142,8 @@ export interface AbilityStatus {
   /** 0 = on cooldown. */
   usesLeft: number;
   targetType?: "self" | "enemy" | "ally";
+  /** Tile range this ability can reach (Infinity for self-targeting). */
+  range: number;
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -138,6 +203,13 @@ export interface CombatEvent {
   value?: number;
   /** Destination for move events. */
   position?: GridPosition;
+  /**
+   * For move events: the full tile-by-tile route the entity walked (including
+   * the origin as path[0] and the destination as the last cell). The client
+   * animates the token stepping along this so players can see HOW it moved, not
+   * just where it ended up. Server-authoritative — the client never invents it.
+   */
+  path?: GridPosition[];
   abilityId?: string;
   condition?: Condition;
   /** Human-readable log line for the combat log panel. */

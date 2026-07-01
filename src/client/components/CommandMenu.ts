@@ -37,6 +37,7 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   { command: "quests", label: "Quests", shortcut: "q" },
   { command: "map",    label: "Map",    shortcut: "m" },
   { command: "skills", label: "Skills", shortcut: "c" },
+  { command: "inventory", label: "Bag", shortcut: "i" },
   { command: "help",  label: "Help",  shortcut: "h" },
 ];
 
@@ -49,6 +50,13 @@ export const VERTICAL_COMMANDS: Record<"up" | "down", CommandDefinition> = {
   up:   { command: "up",   label: "Up ▲" },
   down: { command: "down", label: "Down ▼" },
 };
+
+/**
+ * Contextual "Trade" command, shown only in rooms that hold a vendor (see
+ * GameScreen.updateRoom). Kept out of DEFAULT_COMMANDS so the button doesn't
+ * appear — and error — everywhere else.
+ */
+export const TRADE_COMMAND: CommandDefinition = { command: "trade", label: "Trade ⚖", shortcut: "g" };
 
 export class CommandMenu {
   private readonly container: HTMLElement;
