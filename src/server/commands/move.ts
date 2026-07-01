@@ -49,5 +49,5 @@ export function move(playerId: string, direction: string): string {
 
   const exits = Object.keys(nextRoom.exits).join(", ") || "none";
 
-  return `➡️ You move ${direction}...\n\n📍 ${nextRoom.name}\n\n${nextRoom.description}\n\nExits: ${exits}`;
+  return `» You move ${direction}...\n\n◆ ${nextRoom.name}\n\n${nextRoom.description}\n\nExits: ${exits}`;
 }

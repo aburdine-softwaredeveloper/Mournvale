@@ -30,5 +30,5 @@ export function say(playerId: string, args: string[]): string {
     player.id
   );
 
-  return `💬 You say: "${message}"`;
+  return `❝ You say: "${message}"`;
 }

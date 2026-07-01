@@ -169,14 +169,24 @@ html, body {
 
 #screen-menu {
   /* position: relative is set by menu-intro-fog.css for the canvas */
-  background: #241f1a; /* dark leather cover */
+  /* Aged leather: a mottled brown hide with a darkened vignette at the edges,
+     as though light falls on the centre of a worn book cover. */
+  background:
+    radial-gradient(ellipse at 50% 40%,
+      rgba(80,60,40,0.55) 0%,
+      rgba(40,32,24,0.35) 55%,
+      rgba(14,10,7,0.75) 100%),
+    repeating-linear-gradient(115deg,
+      rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 2px,
+      rgba(255,255,255,0.015) 2px, rgba(255,255,255,0.015) 4px),
+    #2a2018;
   justify-content: center;
   align-items: center;
 }
 
 #menu-content {
   width: 90%;
-  max-width: 560px;
+  max-width: 460px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -184,6 +194,23 @@ html, body {
   /* sit above the fog canvas */
   position: relative;
   z-index: 2;
+
+  /* The leather cover itself: a raised, tooled panel with a gilt border rule
+     debossed into the hide, and a soft grain sheen across the surface. */
+  padding: 44px 40px 40px;
+  background:
+    linear-gradient(160deg, rgba(74,55,36,0.9) 0%, rgba(46,34,22,0.9) 100%),
+    #3a2c1c;
+  border: 2px solid #1c140c;
+  border-radius: 6px;
+  box-shadow:
+    /* the gilt inner frame tooled into the leather */
+    inset 0 0 0 2px rgba(0,0,0,0.4),
+    inset 0 0 0 4px rgba(196,158,96,0.45),
+    inset 0 0 0 6px rgba(0,0,0,0.3),
+    /* interior lift + drop shadow for a bound-cover feel */
+    inset 0 1px 0 rgba(200,168,110,0.15),
+    0 10px 30px rgba(0,0,0,0.6);
 }
 
 #menu-title {
@@ -191,15 +218,8 @@ html, body {
   color: #d8b878;
   font-size: 28px;
   letter-spacing: 8px;
-  text-shadow: 1px 1px 0 #1a140e, 2px 2px 3px rgba(0,0,0,0.6);
-  margin-bottom: 0;
-}
-
-#menu-subtitle {
-  color: #b8915a; /* faded gilt on leather */
-  font-size: 12px;
-  letter-spacing: 2px;
-  margin-bottom: 24px;
+  text-shadow: 0 1px 0 #1a140e, 0 -1px 0 rgba(240,214,150,0.35), 2px 2px 3px rgba(0,0,0,0.6);
+  margin-bottom: 20px;
 }
 
 .menu-buttons {
@@ -1410,10 +1430,25 @@ html, body {
   align-items: center;
   justify-content: space-between;
 }
+/* Close (✕) for the skills screen: a bold gold glyph, not a boxed button, so
+   it reads clearly as "exit" against the panel chrome. */
 .skill-close-btn {
-  padding: 2px 8px;
-  font-size: 0.7em;
+  background: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  color: var(--color-text-gold);
+  font-size: 1.5em;
   line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+  transition: color 100ms ease, transform 100ms ease;
+}
+.skill-close-btn:hover,
+.skill-close-btn:focus {
+  color: #ffe9b0;
+  transform: scale(1.15);
 }
 
 /* ── Character panel ── */

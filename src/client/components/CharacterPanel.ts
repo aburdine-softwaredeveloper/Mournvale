@@ -52,8 +52,9 @@ export class CharacterPanel {
     title.className = "panel-title";
     title.textContent = "◆ CHARACTER";
     const close = document.createElement("button");
-    close.className = "snes-btn skill-close-btn";
+    close.className = "skill-close-btn";
     close.textContent = "✕";
+    close.setAttribute("aria-label", "Close character screen");
     close.title = "Close character screen";
     close.addEventListener("click", () => this.onClose?.());
     header.append(title, close);

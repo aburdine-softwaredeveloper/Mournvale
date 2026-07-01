@@ -29,7 +29,7 @@ export function look(playerId: string): string {
 
   // Assemble in sections so the close-up detail and notable features read as a
   // natural deepening of the room blurb, before exits and occupants.
-  const sections: string[] = [`📍 ${room.name}`, room.description];
+  const sections: string[] = [`◆ ${room.name}`, room.description];
 
   if (detail?.detail) sections.push(detail.detail);
   if (detail?.features?.length) {
