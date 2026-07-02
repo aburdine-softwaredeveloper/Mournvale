@@ -10,7 +10,7 @@
  * the individual screen classes do.
  */
 
-export type ScreenName = "boot" | "menu" | "intro" | "creation" | "game";
+export type ScreenName = "boot" | "menu" | "intro" | "ending" | "creation" | "game";
 
 export class ScreenManager {
   private readonly screens: Record<ScreenName, HTMLElement>;
@@ -21,6 +21,7 @@ export class ScreenManager {
       boot: this.requireEl("screen-boot"),
       menu: this.requireEl("screen-menu"),
       intro: this.requireEl("screen-intro"),
+      ending: this.requireEl("screen-ending"),
       creation: this.requireEl("screen-creation"),
       game: this.requireEl("screen-game"),
     };

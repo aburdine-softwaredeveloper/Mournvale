@@ -20,6 +20,7 @@ import type { NpcView, NpcInteractionView, NpcRole, TalkIntent, DialogueOutcome 
 import type { CombatStateView, CombatEvent, CombatActionSubmission, CombatOutcome } from "./combat";
 import type { AbilityScore } from "./character";
 import type { TalentNode, TalentNodeState } from "./progression";
+import type { ItemKind, ItemRarity, ItemSlot } from "./items";
 
 // ─────────────────────────────────────────────
 // SERVER → CLIENT MESSAGES
@@ -118,6 +119,27 @@ export interface DialogueMessage {
     choices?: DialogueChoice[];
     /** Unique key identifying which creation step this dialogue belongs to */
     step?: CharacterCreationStep;
+  };
+}
+
+/** A single scene in the ending cinematic — a header + typewritten body. */
+export interface EpilogueScene {
+  /** Optional title shown above the body (e.g. "The Fog Lifts"). */
+  header?: string;
+  /** The narrative text, typed out scene by scene. */
+  text: string;
+}
+
+/**
+ * Plays the ending. Sent when the final quest (the Fogmother) is defeated —
+ * the client shows a full-screen epilogue cinematic, then returns to the game
+ * in a world where the Greyfall has lifted. Delivered to every party member
+ * who shared the killing blow's reward.
+ */
+export interface EpilogueMessage {
+  type: "epilogue";
+  payload: {
+    scenes: EpilogueScene[];
   };
 }
 
@@ -259,6 +281,86 @@ export interface SkillScreenView {
 export interface SkillScreenMessage {
   type: "skill_screen";
   payload: SkillScreenView;
+}
+
+// ── Inventory screen ──
+
+/** One row in the inventory screen (a stack of an item, or an equipped piece). */
+export interface InventoryItemView {
+  id: string;
+  name: string;
+  description: string;
+  kind: ItemKind;
+  rarity: ItemRarity;
+  /** Present for equippable items — the slot it occupies. */
+  slot?: ItemSlot;
+  /** How many the player is carrying (unequipped). Equipped rows show 0 here. */
+  count: number;
+  /** True when this item is the one currently worn/wielded in its slot. */
+  equipped: boolean;
+  /** True for consumables (offers a "Use" action). */
+  usable: boolean;
+  /** Human-readable effect, e.g. "+2 AC, +8 HP" or "1d12 · melee". */
+  statLine: string;
+  /** Sell-back value in gold. */
+  sellValue: number;
+}
+
+/** Full inventory snapshot for the inventory screen. */
+export interface InventoryView {
+  gold: number;
+  /** Equipped pieces first, then carried stacks. */
+  items: InventoryItemView[];
+  /** One-line summary of the total combat bonus from equipped gear. */
+  bonusSummary: string;
+}
+
+/**
+ * Sends the inventory snapshot. Emitted on open and after every server-validated
+ * mutation (equip/use/sell) so the client never holds a stale pack.
+ */
+export interface InventoryScreenMessage {
+  type: "inventory_screen";
+  payload: InventoryView;
+}
+
+// ── Shop screen ──
+
+/** One buyable/sellable row in a shop. `price` is the buy price or sell value. */
+export interface ShopEntryView {
+  itemId: string;
+  name: string;
+  description: string;
+  statLine: string;
+  rarity: ItemRarity;
+  price: number;
+  /** For the buy list: whether the player can currently afford it. */
+  affordable?: boolean;
+}
+
+/** A vendor's shop: what they sell and what the player can sell back. */
+export interface ShopView {
+  vendorId: string;
+  vendorName: string;
+  gold: number;
+  forSale: ShopEntryView[];
+  sellable: ShopEntryView[];
+}
+
+/** Sends the shop snapshot on open and after each buy/sell. */
+export interface ShopScreenMessage {
+  type: "shop_screen";
+  payload: ShopView;
+}
+
+/** Buy from / sell to a vendor. */
+export interface ShopActionMessage {
+  type: "shop_action";
+  payload: {
+    action: "buy" | "sell";
+    vendorId: string;
+    itemId: string;
+  };
 }
 
 // ── Combat messages (Phase 3) ──
@@ -453,6 +555,24 @@ export interface QuestAbandonMessage {
   payload: Record<string, never>;
 }
 
+/** Open the inventory screen (requests a fresh InventoryView). */
+export interface InventoryRequestMessage {
+  type: "inventory_request";
+  payload: Record<string, never>;
+}
+
+/** Act on an item: equip/unequip a piece, use a consumable, or sell one. */
+export interface InventoryActionMessage {
+  type: "inventory_action";
+  payload: {
+    action: "equip" | "unequip" | "use" | "sell";
+    /** The item to act on (equip/use/sell). */
+    itemId?: string;
+    /** The slot to clear (unequip). */
+    slot?: ItemSlot;
+  };
+}
+
 // ── Combat actions (client → server, Phase 3) ──
 
 /**
@@ -526,6 +646,7 @@ export type ServerMessage =
   | ChatMessage
   | SpeakerPortraitMessage
   | DialogueMessage
+  | EpilogueMessage
   | StateTransitionMessage
   | CharacterConfirmedMessage
   | PlayerPresenceMessage
@@ -535,6 +656,8 @@ export type ServerMessage =
   | PartyInviteMessage
   | QuestBoardMessage
   | SkillScreenMessage
+  | InventoryScreenMessage
+  | ShopScreenMessage
   | NpcInteractionMessage
   | CombatStartMessage
   | CombatPlanningMessage
@@ -558,5 +681,8 @@ export type ClientMessage =
   | QuestBoardRequestMessage
   | QuestAcceptMessage
   | QuestAbandonMessage
+  | InventoryRequestMessage
+  | InventoryActionMessage
+  | ShopActionMessage
   | TalkMessage
   | CombatSubmitActionMessage;

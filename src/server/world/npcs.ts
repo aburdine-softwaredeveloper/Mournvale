@@ -182,9 +182,9 @@ export const NPCS: NPC[] = [
       { text: "Steel's the only honest thing left in this valley. What do you need?" },
     ],
     stock: [
-      { id: "iron-sword", name: "Iron Sword", price: 120, description: "Plain, balanced, reliable." },
-      { id: "round-shield", name: "Round Shield", price: 80, description: "Banded oak. Has stopped worse." },
-      { id: "whetstone", name: "Whetstone", price: 15, description: "Keeps an edge keen." },
+      { itemId: "iron_sword" },
+      { itemId: "leather_jerkin" },
+      { itemId: "chainmail" },
     ],
   },
 
@@ -199,10 +199,9 @@ export const NPCS: NPC[] = [
       { text: "If I don't have it, you don't need it. Probably." },
     ],
     stock: [
-      { id: "rope", name: "Coil of Rope", price: 10, description: "Fifty feet of sturdy hemp." },
-      { id: "lamp-oil", name: "Lamp Oil", price: 8, description: "A flask. Burns through a long night." },
-      { id: "rations", name: "Trail Rations", price: 12, description: "Hard bread, dried meat, regret." },
-      { id: "lantern", name: "Iron Lantern", price: 45, description: "Wards off more than dark." },
+      { itemId: "healing_potion" },
+      { itemId: "swift_boots" },
+      { itemId: "vigor_ring" },
     ],
   },
 
@@ -217,9 +216,9 @@ export const NPCS: NPC[] = [
       { text: "Careful what you breathe in here. Half these jars would kill you." },
     ],
     stock: [
-      { id: "healing-draught", name: "Healing Draught", price: 35, description: "Closes wounds. Tastes of pennies." },
-      { id: "antitoxin", name: "Antitoxin", price: 30, description: "For when the fog gets into your blood." },
-      { id: "fogwort", name: "Fogwort Bundle", price: 18, description: "Burned to keep the grey at bay." },
+      { itemId: "healing_potion" },
+      { itemId: "greater_healing_potion" },
+      { itemId: "antidote" },
     ],
   },
 

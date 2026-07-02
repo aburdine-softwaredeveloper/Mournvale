@@ -46,7 +46,7 @@ export const ROOMS: Record<string, Room> = {
       "A low, damp undercroft stacked with ale casks and splintered crates. " +
       "The air is thick with mildew, and something skitters in the dark " +
       "between the barrels — too many somethings, by the sound of it.",
-    artKey: "tavern",
+    artKey: "cellar",
     exits: { up: "tavern" },
   },
 
@@ -184,7 +184,7 @@ export const ROOMS: Record<string, Room> = {
       "Past the chapel the cobbles give way to a rutted track that the Greyfall " +
       "has all but swallowed. Shapes lope between the dead trees — lean, grey, " +
       "and hungry. The fog-wolves have claimed the road.",
-    artKey: "south_road",
+    artKey: "fog_road",
     exits: { south: "chapel", north: "fogheart" },
   },
 
@@ -195,7 +195,7 @@ export const ROOMS: Record<string, Room> = {
       "The Greyfall thickens until it is almost solid, coiling like a living " +
       "thing. At its center something vast turns to face you — the source of the " +
       "fog, the wound the whole land has been bleeding from. The Fogmother.",
-    artKey: "graveyard",
+    artKey: "fogheart",
     exits: { south: "fog_road" },
   },
 };

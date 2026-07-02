@@ -13,13 +13,15 @@
 import type { CharacterData } from "../../types/game";
 import type { ProgressionState } from "../../types/progression";
 import type { SocialMemory } from "../../types/social";
+import type { Inventory } from "../../types/items";
 
 /**
  * Current save format version. Bump when SaveData's shape changes.
- * v2 added `progression`; v3 added `social` (drifting NPC relationships).
+ * v2 added `progression`; v3 added `social` (drifting NPC relationships);
+ * v4 added `inventory` (gold, items, equipped gear).
  * Older saves are migrated on load (see SaveStore.load).
  */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 /**
  * The full persisted state for a single character.
@@ -43,6 +45,12 @@ export interface SaveData {
    * empty memory when missing, so loaded data always carries one.
    */
   social?: SocialMemory;
+  /**
+   * The character's purse and pack (gold, items, equipped gear). Optional on the
+   * type so older saves still parse; SaveStore.load backfills a fresh inventory
+   * when missing, so loaded data always carries one.
+   */
+  inventory?: Inventory;
   /** Unix timestamp (ms) of when this save was written */
   savedAt: number;
 }

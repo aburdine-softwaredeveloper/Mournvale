@@ -77,7 +77,22 @@ export interface NpcDialogue {
   text: string;
 }
 
-/** A single item a vendor sells. */
+/**
+ * One line of a vendor's authored stock — a reference to a catalog item
+ * (types/items.ts) with an optional price override. When `price` is omitted the
+ * shop charges the item's catalog `value`. Kept as a lean reference so the shop,
+ * the item's stats, and its description all come from one source (the catalog).
+ */
+export interface StockEntry {
+  itemId: string;
+  price?: number;
+}
+
+/**
+ * A vendor's stock resolved for display (used in the talk-interaction "selling:"
+ * flavor line). Built from StockEntry + the catalog — name/description come from
+ * the item, price from the entry or the catalog value.
+ */
 export interface VendorItem {
   id: string;
   name: string;
@@ -111,8 +126,8 @@ export interface NPC {
    * is never accidentally spawned as a full Warrior.
    */
   enemyTemplate?: string;
-  /** Goods for sale (vendor role) */
-  stock?: VendorItem[];
+  /** Goods for sale (vendor role) — catalog references, resolved for display. */
+  stock?: StockEntry[];
   /**
    * Skilled conversation branches (Phase 2).
    * Each entry handles one TalkIntent and defines DC + four outcome lines.

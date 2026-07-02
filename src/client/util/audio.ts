@@ -123,17 +123,30 @@ export function playSelect(): void {
   }
 }
 
+/**
+ * Exposes the shared AudioContext so the music layer (music.ts) rides the
+ * same context (and the same first-gesture resume hook) as the blips.
+ */
+export function getAudioContext(): AudioContext | null {
+  return getContext();
+}
+
 export function isMuted(): boolean {
   return muted;
 }
 
-/** Toggles global mute, persists it, and returns the new state. */
-export function toggleMute(): boolean {
-  muted = !muted;
+/** Sets the sound-effects mute directly and persists it. */
+export function setMuted(value: boolean): void {
+  muted = value;
   try {
     window.localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
   } catch {
     /* ignore persistence failure */
   }
+}
+
+/** Toggles global mute, persists it, and returns the new state. */
+export function toggleMute(): boolean {
+  setMuted(!muted);
   return muted;
 }

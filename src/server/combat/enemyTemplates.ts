@@ -42,6 +42,12 @@ export interface EnemyTemplate {
   xp: number;
   /** Optional condition this creature's bite/claw inflicts on a hit. */
   inflicts?: Condition;
+  /**
+   * Loot this creature may drop on death. Each entry is rolled independently at
+   * `chance` (0..1); `itemId` references the catalog (types/items.ts). Tougher,
+   * higher-tier foes carry better odds and better gear.
+   */
+  loot?: Array<{ itemId: string; chance: number }>;
 }
 
 function weapon(
@@ -77,6 +83,7 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     weapon: weapon("rat_bite_big", "Gnashing Bite", "1d4", 1, "str"),
     abilityScores: { str: 12, dex: 12, con: 12 },
     xp: 30,
+    loot: [{ itemId: "healing_potion", chance: 0.3 }],
   },
 
   // ── Tier 1 — Fog-line predators ──
@@ -102,6 +109,11 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     weapon: weapon("bandit_sword", "Notched Sword", "1d6", 1, "str"),
     abilityScores: { str: 12, dex: 13, con: 12 },
     xp: 55,
+    loot: [
+      { itemId: "iron_sword", chance: 0.25 },
+      { itemId: "leather_jerkin", chance: 0.3 },
+      { itemId: "healing_potion", chance: 0.3 },
+    ],
   },
 
   // ── Tier 3 — Fog-touched horrors ──
@@ -111,6 +123,7 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     weapon: weapon("ghoul_claws", "Rotting Claws", "1d6", 1, "str"),
     abilityScores: { str: 14, dex: 12, con: 14 },
     xp: 75, inflicts: "poisoned",
+    loot: [{ itemId: "antidote", chance: 0.4 }, { itemId: "vigor_ring", chance: 0.12 }],
   },
   shade: {
     key: "shade", name: "Fog Shade", tier: 3,
@@ -134,6 +147,11 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     weapon: weapon("fog_lash", "Tendril Lash", "2d6", 2, "str"),
     abilityScores: { str: 18, dex: 14, con: 18 },
     xp: 400, inflicts: "blinded",
+    loot: [
+      { itemId: "fogsteel_axe", chance: 1 },
+      { itemId: "warden_plate", chance: 0.5 },
+      { itemId: "greater_healing_potion", chance: 1 },
+    ],
   },
 };
 

@@ -6,9 +6,9 @@
  *   2. Lightning flashes intermittently, briefly lighting the clouds.
  *   3. The MOURNVALE title "powers on" (the classic GBC logo drop), and
  *      a copyright/year stamp fades in beneath it.
- *   4. After a short hold (or as soon as the player presses a key / clicks
- *      / taps), it fades out and calls onComplete() — which hands off to
- *      the title menu.
+ *   4. It holds on the "PRESS START" prompt until the player presses a key /
+ *      clicks / taps, then fades out and calls onComplete() — which hands off
+ *      to the title menu. There is no auto-advance.
  *
  * Fully self-contained and client-only: no sockets, no assets. The clouds
  * and lightning are drawn procedurally so nothing extra ships.
@@ -21,9 +21,6 @@ import { playSelect } from "../util/audio";
 
 /** The year stamped on the boot screen (the game's "made" year). */
 const COPYRIGHT_YEAR = 2026;
-
-/** Auto-advance after this long if the player doesn't skip (ms). */
-const AUTO_ADVANCE_MS = 5200;
 
 /** A drifting cloud band. */
 interface Cloud {
@@ -95,7 +92,8 @@ export class BootSplashScreen {
     this.attach();
     this.startSky();
 
-    this.autoTimer = window.setTimeout(() => this.finish(), AUTO_ADVANCE_MS);
+    // No auto-advance: the boot splash holds until the player presses a key,
+    // clicks, or taps. The "PRESS START" prompt cues them to act.
   }
 
   // ─── Sky (clouds + lightning) ──────────────────────────────────────────────

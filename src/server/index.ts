@@ -39,6 +39,7 @@ import { JsonFileSaveStore, buildSaveData } from "./persistence/SaveStore";
 import type { SaveStore } from "./persistence/SaveStore";
 import { PartyManager } from "./party/PartyManager";
 import { QuestManager } from "./quest/QuestManager";
+import { EPILOGUE_SCENES } from "./quest/epilogue";
 import { worldManager } from "./world/WorldManager";
 import { TOWN_CODEX } from "./world/townCodex";
 import { combatManager, buildPlayerCombatEntity, buildEnemyFromTemplate } from "./combat/CombatManager";
@@ -65,6 +66,15 @@ import {
 import {
   rumorMill, rumorInfluence, clampReputation, buildRumorContext,
 } from "./social/rumors";
+import {
+  newInventory, addItem, itemById, itemByName, equip, unequip, buy, sell, sellValue,
+} from "../types/items";
+import type { ItemSlot } from "../types/items";
+import { buildInventoryView, buildShopView } from "./character/inventoryScreen";
+import { vendorPrice } from "./world/vendor";
+
+/** Gold a freshly-created character starts with. */
+const STARTING_GOLD = 50;
 import {
   newProgression, awardXp, levelForXp,
   spendTalentPoint, spendAttributePoint, equipAbility, unequipSlot, ABILITY_SLOTS,
@@ -219,7 +229,7 @@ server.on("connection", (socket: WebSocket) => {
       currentPlayer.playerId &&
       currentPlayer.activeSlot
     ) {
-      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId, currentPlayer.progression, currentPlayer.social);
+      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId, currentPlayer.progression, currentPlayer.social, currentPlayer.inventory);
       const { playerId, activeSlot } = currentPlayer;
       saveStore
         .save(playerId, activeSlot, data)
@@ -322,6 +332,7 @@ async function handleMenuMessage(
       // defensively just in case.
       player.progression = data.progression ?? newProgression(data.character.characterClass);
       player.social      = data.social ?? newSocialMemory();
+      player.inventory   = data.inventory ?? newInventory();
       player.roomId      = rooms[data.roomId] ? data.roomId : "tavern";
       player.state       = "active";
 
@@ -417,6 +428,7 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
       player.character = character;
       player.progression = newProgression(character.characterClass);
       player.social    = newSocialMemory();
+      player.inventory = addItem(newInventory(STARTING_GOLD), "healing_potion", 2);
       player.state     = "active";
       player.roomId    = "tavern";
 
@@ -445,7 +457,7 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
       });
 
       if (player.playerId && player.activeSlot) {
-        const data = buildSaveData(character, player.roomId, player.progression, player.social);
+        const data = buildSaveData(character, player.roomId, player.progression, player.social, player.inventory);
         const { playerId, activeSlot } = player;
         saveStore
           .save(playerId, activeSlot, data)
@@ -481,6 +493,10 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
       // `say`/`speak`/`ask`/`chat` is the one unified speech verb — routes to a
       // room broadcast or an NPC conversation depending on who's addressed.
       if (handleSpeakCommand(player, socket, msg.payload.input)) return;
+      // `inventory`/`inv`/`i`/`bag` opens the pack (typed SkillScreen-style view).
+      if (handleInventoryCommand(player, socket, msg.payload.input)) return;
+      // `shop`/`trade`/`buy`/`sell` opens the room's vendor stall, if one's here.
+      if (handleShopCommand(player, socket, msg.payload.input)) return;
 
       const response = handleCommand(player.id, msg.payload.input);
       if (response) sendToPlayer(socket, { type: "system", payload: { message: response } });
@@ -519,6 +535,18 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
 
     case "quest_abandon":
       handleQuestAbandon(player, socket);
+      return;
+
+    case "inventory_request":
+      sendInventory(player, socket);
+      return;
+
+    case "inventory_action":
+      handleInventoryAction(player, socket, msg.payload);
+      return;
+
+    case "shop_action":
+      handleShopAction(player, socket, msg.payload);
       return;
 
     case "talk":
@@ -939,6 +967,7 @@ export function triggerCombat(roomId: string): void {
       hp:             30,
       position:       { x: i % 8, y: 7 - Math.floor(i / 8) },
       ...(p.progression && { progression: p.progression }),
+      ...(p.inventory && { inventory: p.inventory }),
     })
   );
 
@@ -1019,12 +1048,19 @@ function handleCombatSubmitAction(
     // ids are `enemy-<npcId>`; the npc id is not its template key, so we read
     // the template the npc was spawned from). Falls back to the rat's value.
     const enemyEntities = state.entities.filter(e => e.type === "enemy");
-    const xpReward = enemyEntities.reduce((sum, e) => {
-      const npcId = e.id.replace(/^enemy-/, "");
-      const tmplKey = worldManager.getNpcById(npcId)?.enemyTemplate;
-      return sum + getEnemyTemplate(tmplKey).xp;
-    }, 0);
-    const goldReward = Math.floor(Math.random() * 15) + 5;
+    const templatesDefeated = enemyEntities.map(e =>
+      getEnemyTemplate(worldManager.getNpcById(e.id.replace(/^enemy-/, ""))?.enemyTemplate)
+    );
+    const xpReward = templatesDefeated.reduce((sum, t) => sum + t.xp, 0);
+    // Gold scales with the danger faced (a share of the XP) plus a little luck.
+    const goldReward = Math.floor(xpReward * 0.25) + 5 + Math.floor(Math.random() * 10);
+    // Roll each defeated creature's loot table independently.
+    const droppedItems: string[] = [];
+    for (const t of templatesDefeated) {
+      for (const drop of t.loot ?? []) {
+        if (Math.random() < drop.chance) droppedItems.push(drop.itemId);
+      }
+    }
 
     // Award XP only on a win, and only to players who are still standing.
     const survivors = new Set(
@@ -1046,6 +1082,7 @@ function handleCombatSubmitAction(
 
       if (outcome === "players_win" && survivors.has(pid)) {
         awardCombatXp(pid, xpReward);
+        grantCombatLoot(pid, goldReward, droppedItems);
         const winner = getPlayerByPlayerId(pid);
         if (winner) maybeCompleteRoomQuest(winner, state.roomId);
       }
@@ -1088,6 +1125,28 @@ function handleCombatSubmitAction(
  * with awardXp (which reconciles level + unspent points), reports any level-up,
  * and persists the updated progression to the active slot.
  */
+/**
+ * Grants combat spoils — gold and any rolled item drops — to a victorious
+ * player's inventory, tells them what they found, and persists. Resolved via the
+ * persistent playerId, like awardCombatXp.
+ */
+function grantCombatLoot(playerId: string, gold: number, itemIds: string[]): void {
+  const player = getPlayerByPlayerId(playerId);
+  if (!player) return;
+  if (!player.inventory) player.inventory = newInventory();
+
+  player.inventory = { ...player.inventory, gold: player.inventory.gold + gold };
+  for (const id of itemIds) player.inventory = addItem(player.inventory, id);
+
+  const spoils: string[] = [];
+  if (gold > 0) spoils.push(`${gold} gold`);
+  for (const id of itemIds) spoils.push(itemById(id)?.name ?? id);
+  if (spoils.length) {
+    sendToPlayer(player.socket, { type: "system", payload: { message: `Spoils: ${spoils.join(", ")}.` } });
+  }
+  saveProgress(player);
+}
+
 function awardCombatXp(playerId: string, xp: number): void {
   const player = getPlayerByPlayerId(playerId);
   if (!player || !player.progression) return;
@@ -1172,11 +1231,21 @@ function grantQuestCompletion(player: Player, ownerKey: string): void {
     `Reward: ${reward.gold} gold, ${reward.xp} XP` +
     (reward.item ? `, ${reward.item}` : "") + ".";
 
+  // Resolve the authored reward item (a display name) to a catalog entry, if any.
+  const rewardItem = reward.item ? itemByName(reward.item) : undefined;
+
+  // The giver's spoken resolution — the story beat that lands before the reward.
+  // Spoken as NPC dialogue (with portrait) when the giver stands in the room;
+  // otherwise delivered as aftermath narration so we never show a portrait for
+  // someone who isn't present (deliveries, remote clears).
+  const giverNpc = worldManager.getQuestGiverNpcId(active.quest.id)
+    ? worldManager.getNpcById(worldManager.getQuestGiverNpcId(active.quest.id)!)
+    : undefined;
+
   for (const member of recipients) {
     if (member.progression) {
       const before = member.progression.level;
       member.progression = awardXp(member.progression, reward.xp);
-      saveProgress(member);
       if (member.progression.level > before) {
         sendToPlayer(member.socket, {
           type: "system",
@@ -1184,6 +1253,33 @@ function grantQuestCompletion(player: Player, ownerKey: string): void {
         });
       }
     }
+    // Purse the quest gold and the reward item.
+    if (!member.inventory) member.inventory = newInventory();
+    member.inventory = { ...member.inventory, gold: member.inventory.gold + reward.gold };
+    if (rewardItem) member.inventory = addItem(member.inventory, rewardItem.id);
+    saveProgress(member);
+
+    // Spoken resolution — the payoff beat, delivered just before the reward.
+    if (active.quest.resolution) {
+      const coLocated = !!giverNpc && giverNpc.roomId === member.roomId;
+      if (coLocated) {
+        sendToPlayer(member.socket, {
+          type: "speaker_portrait",
+          payload: { name: giverNpc!.name, role: giverNpc!.role, side: "left" },
+        });
+        sendToPlayer(member.socket, {
+          type: "chat",
+          payload: { speaker: giverNpc!.name, message: active.quest.resolution },
+        });
+      } else {
+        // Giver isn't present — deliver as aftermath narration (no portrait).
+        sendToPlayer(member.socket, {
+          type: "system",
+          payload: { message: active.quest.resolution },
+        });
+      }
+    }
+
     sendToPlayer(member.socket, { type: "system", payload: { message: rewardLine } });
     sendQuestBoard(member, member.socket);
 
@@ -1197,6 +1293,15 @@ function grantQuestCompletion(player: Player, ownerKey: string): void {
         originNpcId: giverNpcId,
         kind: "deed",
         detail: `saw "${active.quest.title}" through`,
+      });
+    }
+
+    // The ending. Defeating the Fogmother is the campaign's climax — play the
+    // epilogue cinematic for everyone who shared in the victory.
+    if (active.quest.id === "authored-fog-boss") {
+      sendToPlayer(member.socket, {
+        type: "epilogue",
+        payload: { scenes: EPILOGUE_SCENES },
       });
     }
   }
@@ -1275,7 +1380,7 @@ function maybeTurnInQuest(player: Player, npc: { id: string }): boolean {
  */
 function saveProgress(player: Player): void {
   if (!player.playerId || !player.activeSlot || !player.character || !player.roomId) return;
-  const data = buildSaveData(player.character, player.roomId, player.progression, player.social);
+  const data = buildSaveData(player.character, player.roomId, player.progression, player.social, player.inventory);
   const { playerId, activeSlot } = player;
   saveStore
     .save(playerId, activeSlot, data)
@@ -1310,6 +1415,142 @@ function sendSkillScreen(player: Player, socket: WebSocket): void {
  * same state by reference on rejection), then the updated view is re-emitted and
  * the save is written.
  */
+// ─────────────────────────────────────────────
+// INVENTORY
+// ─────────────────────────────────────────────
+
+/** Send the player their current inventory snapshot (defaulting an empty pack). */
+function sendInventory(player: Player, socket: WebSocket): void {
+  if (!player.inventory) player.inventory = newInventory();
+  sendToPlayer(socket, { type: "inventory_screen", payload: buildInventoryView(player.inventory) });
+}
+
+/** Opens the pack on `inventory`/`inv`/`i`/`bag`/`items`. Returns true if handled. */
+function handleInventoryCommand(player: Player, socket: WebSocket, input: string): boolean {
+  const cmd = input.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (!["inventory", "inv", "i", "bag", "items"].includes(cmd)) return false;
+  if (!player.character) {
+    sendToPlayer(socket, { type: "system", payload: { message: "No character loaded." } });
+    return true;
+  }
+  sendInventory(player, socket);
+  return true;
+}
+
+/**
+ * Apply an inventory action (equip / unequip / sell), validated through the pure
+ * items.ts helpers, then persist and re-send the fresh view. Using a consumable
+ * is deferred to the in-combat item-use path (not yet built), so `use` outside
+ * combat just nudges the player to save it for a fight.
+ */
+function handleInventoryAction(
+  player: Player,
+  socket: WebSocket,
+  payload: { action: "equip" | "unequip" | "use" | "sell"; itemId?: string; slot?: ItemSlot }
+): void {
+  if (!player.inventory) player.inventory = newInventory();
+  const before = player.inventory;
+  let message = "";
+
+  switch (payload.action) {
+    case "equip":
+      if (payload.itemId) {
+        player.inventory = equip(before, payload.itemId);
+        message = player.inventory === before
+          ? "You can't equip that right now."
+          : `Equipped ${itemById(payload.itemId)?.name ?? payload.itemId}.`;
+      }
+      break;
+    case "unequip":
+      if (payload.slot) {
+        player.inventory = unequip(before, payload.slot);
+        message = player.inventory === before ? "Nothing to remove there." : `Removed your ${payload.slot}.`;
+      }
+      break;
+    case "sell":
+      if (payload.itemId) {
+        const sold = sell(before, payload.itemId);
+        const def = itemById(payload.itemId);
+        if (!sold || !def) message = "You don't have that to sell.";
+        else { player.inventory = sold; message = `Sold ${def.name} for ${sellValue(def)} gold.`; }
+      }
+      break;
+    case "use":
+      message = "Best saved for the thick of a fight.";
+      break;
+  }
+
+  if (message) sendToPlayer(socket, { type: "system", payload: { message } });
+  if (player.inventory !== before) saveProgress(player);
+  sendInventory(player, socket);
+}
+
+// ─────────────────────────────────────────────
+// SHOP (vendor buy / sell)
+// ─────────────────────────────────────────────
+
+/** The vendor (if any) standing in the player's current room. */
+function vendorInRoom(player: Player): NPC | undefined {
+  if (!player.roomId) return undefined;
+  return worldManager.getNpcsInRoom(player.roomId).find(n => n.role === "vendor");
+}
+
+/** Opens the room's shop on `shop`/`trade`/`buy`/`sell`/`store`/`wares`. */
+function handleShopCommand(player: Player, socket: WebSocket, input: string): boolean {
+  const cmd = input.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (!["shop", "trade", "buy", "sell", "store", "wares"].includes(cmd)) return false;
+
+  const vendor = vendorInRoom(player);
+  if (!vendor) {
+    sendToPlayer(socket, { type: "system", payload: { message: "There's no one here to trade with." } });
+    return true;
+  }
+  if (!player.inventory) player.inventory = newInventory();
+  sendToPlayer(socket, { type: "shop_screen", payload: buildShopView(vendor, player.inventory) });
+  return true;
+}
+
+/**
+ * Buy from / sell to a vendor, validated through the pure items.ts helpers. Buy
+ * price comes from the vendor's authored stock; sell credits sellValue. Requires
+ * the player to still be standing with the vendor. Persists and re-sends the
+ * shop so gold and stock stay in sync.
+ */
+function handleShopAction(
+  player: Player,
+  socket: WebSocket,
+  payload: { action: "buy" | "sell"; vendorId: string; itemId: string }
+): void {
+  const vendor = worldManager.getNpcById(payload.vendorId);
+  if (!vendor || vendor.role !== "vendor" || player.roomId !== vendor.roomId) {
+    sendToPlayer(socket, { type: "system", payload: { message: "You've wandered off from the stall." } });
+    return;
+  }
+  if (!player.inventory) player.inventory = newInventory();
+  const before = player.inventory;
+  let message = "";
+
+  if (payload.action === "buy") {
+    const price = vendorPrice(vendor, payload.itemId);
+    const def = itemById(payload.itemId);
+    if (price === null || !def) message = "They don't sell that.";
+    else {
+      const bought = buy(before, payload.itemId, price);
+      if (!bought) message = `You can't afford ${def.name} (${price} gold).`;
+      else { player.inventory = bought; message = `Bought ${def.name} for ${price} gold.`; }
+    }
+  } else {
+    const def = itemById(payload.itemId);
+    const sold = sell(before, payload.itemId);
+    if (!sold || !def) message = "You don't have that to sell.";
+    else { player.inventory = sold; message = `Sold ${def.name} for ${sellValue(def)} gold.`; }
+  }
+
+  if (message) sendToPlayer(socket, { type: "system", payload: { message } });
+  if (player.inventory !== before) saveProgress(player);
+  sendToPlayer(socket, { type: "shop_screen", payload: buildShopView(vendor, player.inventory) });
+}
+
 function handleSkillCommand(player: Player, socket: WebSocket, input: string): boolean {
   const parts = input.trim().split(/\s+/);
   const cmd = parts[0]?.toLowerCase();

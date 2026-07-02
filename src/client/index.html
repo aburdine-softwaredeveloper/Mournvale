@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
   <title>Mournvale</title>
 
-  <!-- Pixel font from Google Fonts -->
+  <!-- Pixel font + fairytale display faces from Google Fonts -->
   <link
-    href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Cinzel+Decorative:wght@400;700;900&family=IM+Fell+English:ital@0;1&display=swap"
     rel="stylesheet"
   />
 
@@ -32,27 +32,39 @@
 
   <!-- ═══════════════════════════════════════
        MAIN MENU SCREEN
-       New Game / Load Game + 5-slot picker
+       A storybook resting in the fog. The front cover carries the
+       gold-leaf title and New Game / Load Game; choosing either swings
+       the cover open (3D CSS) to reveal the save-slot page beneath.
   ════════════════════════════════════════ -->
   <div id="screen-menu" class="screen hidden">
-    <div id="menu-content">
+    <div id="menu-book-scene">
+      <div id="menu-book">
 
-      <div id="menu-title">MOURNVALE</div>
-      <div id="menu-subtitle">▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔</div>
+        <!-- The page block under the cover: revealed when the book opens -->
+        <div id="book-page">
+          <div id="menu-slot-panel" class="hidden">
+            <div id="menu-slot-title" class="page-heading">Choose a Slot</div>
+            <div id="menu-slot-list" class="slot-list-container"></div>
+            <button id="menu-back-btn" class="snes-btn menu-back">◄ CLOSE THE BOOK</button>
+          </div>
+        </div>
 
-      <!-- Root choice: New Game / Load Game -->
-      <div id="menu-root-buttons" class="menu-buttons">
-        <button id="menu-new-game" class="snes-btn menu-big-btn">NEW GAME</button>
-        <button id="menu-load-game" class="snes-btn menu-big-btn">LOAD GAME</button>
+        <!-- Front cover: tooled leather, gilt frame, fairytale lettering -->
+        <div id="book-cover">
+          <div id="book-cover-front">
+            <div class="cover-ornament" aria-hidden="true">❦</div>
+            <div id="menu-title">Mournvale</div>
+            <div id="menu-subtitle">~ a tale of the sleeping town ~</div>
+            <div id="menu-root-buttons" class="menu-buttons">
+              <button id="menu-new-game" class="cover-btn">✦ &nbsp;New Game&nbsp; ✦</button>
+              <button id="menu-load-game" class="cover-btn">✦ &nbsp;Load Game&nbsp; ✦</button>
+            </div>
+            <div class="cover-ornament" aria-hidden="true">❦</div>
+          </div>
+          <div id="book-cover-back"></div>
+        </div>
+
       </div>
-
-      <!-- Slot picker (hidden until a mode is chosen) -->
-      <div id="menu-slot-panel" class="snes-panel hidden">
-        <div id="menu-slot-title" class="panel-title">CHOOSE A SLOT</div>
-        <div id="menu-slot-list" class="slot-list-container"></div>
-        <button id="menu-back-btn" class="snes-btn menu-back">◄ BACK</button>
-      </div>
-
     </div>
   </div>
 
@@ -65,6 +77,18 @@
       <div id="intro-header" class="hidden"></div>
       <div id="intro-text"></div>
       <div id="intro-cursor" class="blink hidden">▼ Press any key to continue</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       ENDING SCREEN
+       Epilogue cinematic played when the Fogmother falls
+  ════════════════════════════════════════ -->
+  <div id="screen-ending" class="screen hidden">
+    <div id="ending-content">
+      <div id="ending-header" class="hidden"></div>
+      <div id="ending-text"></div>
+      <div id="ending-cursor" class="blink hidden">▼ Press any key to continue</div>
     </div>
   </div>
 

@@ -14,12 +14,16 @@
 import { randomUUID } from "crypto";
 import type {
   CombatState, CombatEntity, CombatActionSubmission, CombatEvent,
-  CombatStateView, CombatEntityView, GridCell, GridPosition,
+  CombatStateView, CombatEntityView, GridCell, GridCellType, GridPosition,
   CombatOutcome, AbilityStatus,
 } from "../../types/combat";
-import { GRID_COLS, GRID_ROWS } from "../../types/combat";
+import {
+  GRID_COLS, GRID_ROWS, entryCost, coverBonus, hazardDamage,
+} from "../../types/combat";
 import type { CharacterStats, CharacterClass } from "../../types/character";
-import { buildCharacterStats, CLASS_DEFAULT_WEAPONS } from "../../types/character";
+import { buildCharacterStats, CLASS_DEFAULT_WEAPONS, abilityRange } from "../../types/character";
+import type { Inventory } from "../../types/items";
+import { applyEquipment, equipmentBonusHp } from "../../types/items";
 import type { ProgressionState } from "../../types/progression";
 import {
   applyProgression, equippedAbilityIds, talentBonusHp,
@@ -46,6 +50,97 @@ function getCell(grid: GridCell[][], pos: GridPosition): GridCell | undefined {
   return grid[pos.y]?.[pos.x];
 }
 
+/** Stamp a terrain kind onto a cell, keeping `passable` in sync with TERRAIN. */
+function setTerrain(grid: GridCell[][], pos: GridPosition, type: GridCellType): void {
+  const cell = getCell(grid, pos);
+  if (!cell) return;
+  cell.type = type;
+  cell.passable = entryCost(type) !== Infinity;
+}
+
+/** A single authored tile placement. */
+interface TerrainPlacement { pos: GridPosition; type: GridCellType; }
+
+/**
+ * Per-room terrain layouts. The look and tactics of a battlefield should suit
+ * the place: a humble tavern cellar is just grey stone with a few barrels and
+ * crates to path around (no glowing hazards), while the fog-wracked battle rooms
+ * earn dramatic tactical terrain — cover to use, rubble to slow, embers to fear.
+ *
+ * All placements live in the middle rows (y 2..5) so the spawn rows stay clean,
+ * and are only stamped onto empty floor (never an occupied cell). Add a room by
+ * adding an entry; rooms without one fall back to DEFAULT_LAYOUT.
+ */
+const CELLAR_LAYOUT: TerrainPlacement[] = [
+  { pos: { x: 2, y: 3 }, type: "barrel" },
+  { pos: { x: 3, y: 4 }, type: "barrel" },
+  { pos: { x: 5, y: 3 }, type: "barrel" },
+  { pos: { x: 4, y: 2 }, type: "crate" },
+  { pos: { x: 1, y: 4 }, type: "crate" },
+  { pos: { x: 6, y: 4 }, type: "crate" },
+];
+
+const FOGLAND_LAYOUT: TerrainPlacement[] = [
+  { pos: { x: 2, y: 4 }, type: "cover" }, { pos: { x: 3, y: 4 }, type: "cover" }, { pos: { x: 5, y: 3 }, type: "cover" },
+  { pos: { x: 4, y: 3 }, type: "rubble" }, { pos: { x: 4, y: 4 }, type: "rubble" }, { pos: { x: 1, y: 3 }, type: "rubble" }, { pos: { x: 6, y: 4 }, type: "rubble" },
+  { pos: { x: 3, y: 3 }, type: "embers" }, { pos: { x: 5, y: 4 }, type: "embers" },
+];
+
+/** A light, neutral fallback: a couple of crates, nothing dramatic. */
+const DEFAULT_LAYOUT: TerrainPlacement[] = [
+  { pos: { x: 3, y: 3 }, type: "crate" },
+  { pos: { x: 5, y: 4 }, type: "crate" },
+];
+
+const ROOM_LAYOUTS: Record<string, TerrainPlacement[]> = {
+  cellar:   CELLAR_LAYOUT,
+  fog_road: FOGLAND_LAYOUT,
+  fogheart: FOGLAND_LAYOUT,
+};
+
+/** A single tile's raised height, in whole levels (visual only). */
+interface ElevationPlacement { pos: GridPosition; level: number; }
+
+/**
+ * Per-room terrain RELIEF. Elevation is purely visual (see GridCell.elevation) —
+ * it never changes movement or line-of-sight, so it can't unbalance a fight. Use
+ * it to give outdoor battlefields real shape. Indoor rooms stay flat by simply
+ * having no entry here: a tavern cellar has a stone floor, not hills.
+ *
+ * Kept off the spawn rows (y 0 and 7) so no combatant starts perched on a ledge,
+ * and shaped as a gentle central rise rather than a cliff.
+ */
+const FOGLAND_ELEVATION: ElevationPlacement[] = [
+  // A low broken ridge running through the midfield — high ground at the centre.
+  { pos: { x: 3, y: 3 }, level: 1 }, { pos: { x: 4, y: 3 }, level: 2 }, { pos: { x: 5, y: 3 }, level: 1 },
+  { pos: { x: 3, y: 4 }, level: 1 }, { pos: { x: 4, y: 4 }, level: 2 }, { pos: { x: 5, y: 4 }, level: 1 },
+  { pos: { x: 2, y: 3 }, level: 1 }, { pos: { x: 6, y: 4 }, level: 1 },
+];
+
+const ROOM_ELEVATION: Record<string, ElevationPlacement[]> = {
+  // cellar intentionally absent → flat.
+  fog_road: FOGLAND_ELEVATION,
+  fogheart: FOGLAND_ELEVATION,
+};
+
+/**
+ * Stamp the room-appropriate terrain onto the board. Only writes onto empty
+ * floor tiles, so it's safe to call after entities are placed. Unknown rooms get
+ * the light default layout.
+ */
+function applyRoomTerrain(grid: GridCell[][], roomId: string): void {
+  const layout = ROOM_LAYOUTS[roomId] ?? DEFAULT_LAYOUT;
+  for (const { pos, type } of layout) {
+    const cell = getCell(grid, pos);
+    if (cell && cell.type === "floor" && !cell.entityId) setTerrain(grid, pos, type);
+  }
+  // Relief (visual only). Rooms without an entry stay flat.
+  for (const { pos, level } of ROOM_ELEVATION[roomId] ?? []) {
+    const cell = getCell(grid, pos);
+    if (cell) cell.elevation = level;
+  }
+}
+
 function setCell(
   grid: GridCell[][],
   pos: GridPosition,
@@ -63,7 +158,68 @@ function manhattan(a: GridPosition, b: GridPosition): number {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-/** BFS reachability; diagonal costs 1. Returns true if destination reachable. */
+const MOVE_DIRS: Array<[number, number]> = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+
+/**
+ * Cost-aware shortest path from `from` to `to` within `maxSteps` movement
+ * points, honoring terrain entry costs (difficult terrain costs more) and
+ * treating other entities' cells as blocked. Uniform-cost (Dijkstra) search,
+ * since difficult terrain breaks the equal-step assumption a plain BFS makes.
+ *
+ * Returns the tile-by-tile route INCLUDING the origin (path[0]) and total cost,
+ * or null if the destination is unreachable in budget. This single function
+ * backs both reachability checks and the actual move (which needs the route to
+ * animate on the client), so the two can never disagree.
+ */
+function findPath(
+  grid: GridCell[][],
+  from: GridPosition,
+  to: GridPosition,
+  maxSteps: number,
+  ownId: string
+): { path: GridPosition[]; cost: number } | null {
+  if (from.x === to.x && from.y === to.y) return { path: [from], cost: 0 };
+
+  const key = (p: GridPosition) => `${p.x},${p.y}`;
+  const best = new Map<string, number>([[key(from), 0]]);
+  const prev = new Map<string, GridPosition>();
+  // Small frontier; linear extract-min is fine for an 8×8 board.
+  const frontier: Array<{ pos: GridPosition; cost: number }> = [{ pos: from, cost: 0 }];
+
+  while (frontier.length) {
+    let bi = 0;
+    for (let i = 1; i < frontier.length; i++) if (frontier[i]!.cost < frontier[bi]!.cost) bi = i;
+    const { pos, cost } = frontier.splice(bi, 1)[0]!;
+    if (cost > (best.get(key(pos)) ?? Infinity)) continue;
+
+    if (pos.x === to.x && pos.y === to.y) {
+      const path: GridPosition[] = [pos];
+      let cur = pos;
+      while (prev.has(key(cur))) { cur = prev.get(key(cur))!; path.unshift(cur); }
+      return { path, cost };
+    }
+
+    for (const [dx, dy] of MOVE_DIRS) {
+      const nx = pos.x + dx, ny = pos.y + dy;
+      if (nx < 0 || ny < 0 || ny >= GRID_ROWS || nx >= GRID_COLS) continue;
+      const cell = grid[ny]?.[nx];
+      if (!cell?.passable) continue;
+      if (cell.entityId && cell.entityId !== ownId) continue;
+      const step = entryCost(cell.type);
+      const next = cost + step;
+      if (next > maxSteps) continue;
+      const np = { x: nx, y: ny };
+      if (next < (best.get(key(np)) ?? Infinity)) {
+        best.set(key(np), next);
+        prev.set(key(np), pos);
+        frontier.push({ pos: np, cost: next });
+      }
+    }
+  }
+  return null;
+}
+
+/** Whether `to` is reachable from `from` within budget (terrain-aware). */
 function canReach(
   grid: GridCell[][],
   from: GridPosition,
@@ -71,27 +227,7 @@ function canReach(
   maxSteps: number,
   ownId: string
 ): boolean {
-  if (from.x === to.x && from.y === to.y) return true;
-  const visited = new Set<string>();
-  const q: Array<{ pos: GridPosition; steps: number }> = [{ pos: from, steps: 0 }];
-  const dirs: Array<[number, number]> = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
-  while (q.length) {
-    const { pos, steps } = q.shift()!;
-    const key = `${pos.x},${pos.y}`;
-    if (visited.has(key)) continue;
-    visited.add(key);
-    if (pos.x === to.x && pos.y === to.y) return true;
-    if (steps >= maxSteps) continue;
-    for (const [dx, dy] of dirs) {
-      const nx = pos.x + dx, ny = pos.y + dy;
-      if (nx < 0 || ny < 0 || ny >= GRID_ROWS || nx >= GRID_COLS) continue;
-      const cell = grid[ny]?.[nx];
-      if (!cell?.passable) continue;
-      if (cell.entityId && cell.entityId !== ownId) continue;
-      q.push({ pos: { x: nx, y: ny }, steps: steps + 1 });
-    }
-  }
-  return false;
+  return findPath(grid, from, to, maxSteps, ownId) !== null;
 }
 
 // ─── View builders ────────────────────────────────────────────────────────────
@@ -106,6 +242,7 @@ function buildEntityView(e: CombatEntity, isOwner: boolean): CombatEntityView {
           description:   a.description,
           cooldownRounds: a.cooldownRounds,
           usesLeft:      e.abilityUses[a.id] ?? 0,
+          range:         abilityRange(a, e.stats.equippedWeapon.range),
           // Omit (don't set to undefined) under exactOptionalPropertyTypes.
           ...(a.targetType && { targetType: a.targetType }),
         }))
@@ -123,6 +260,7 @@ function buildEntityView(e: CombatEntity, isOwner: boolean): CombatEntityView {
     conditions: e.conditions,
     isDead:     e.isDead,
     ...(e.playerId !== undefined && { playerId: e.playerId }),
+    ...(e.sprite !== undefined && { sprite: e.sprite }),
     ...(isOwner && { weapon: e.stats.equippedWeapon, abilities }),
   };
 }
@@ -217,6 +355,8 @@ export function buildEnemyFromTemplate(params: {
     conditions:  [],
     abilityUses: {},
     isDead:      false,
+    // Sprite art key = the template key ("rat", "fog_wolf", …). See sprite manifest.
+    sprite:      tmpl.key,
   };
 }
 
@@ -236,6 +376,7 @@ export function buildPlayerCombatEntity(params: {
   hp: number;
   position: GridPosition;
   progression?: ProgressionState;
+  inventory?: Inventory;
 }): CombatEntity {
   let stats = buildCharacterStats(params.characterClass, params.progression?.level ?? 1);
   let maxHp = params.hp;
@@ -260,6 +401,13 @@ export function buildPlayerCombatEntity(params: {
     maxHp = params.hp + talentBonusHp(params.progression, tree);
   }
 
+  // Equipped gear layers on AC / ability scores / weapon / speed / HP, on top of
+  // progression — so a worn sword and plate actually change how the player fights.
+  if (params.inventory) {
+    stats = applyEquipment(stats, params.inventory);
+    maxHp += equipmentBonusHp(params.inventory);
+  }
+
   return {
     id:          `player-${params.playerId}`,
     name:        params.name,
@@ -273,6 +421,8 @@ export function buildPlayerCombatEntity(params: {
     conditions:  [],
     abilityUses: { ...stats.abilityUses },
     isDead:      false,
+    // Sprite art key = the class name lowercased ("warrior", "mage", …).
+    sprite:      params.characterClass.toLowerCase(),
   };
 }
 
@@ -292,6 +442,11 @@ export class CombatManager {
     const grid     = buildEmptyGrid();
 
     for (const e of entities) setCell(grid, e.position, e.id);
+
+    // Lay room-appropriate terrain into the midfield (after spawns, so it never
+    // lands on an occupied cell): barrels/crates in a cellar, tactical hazards in
+    // the fog battles. See ROOM_LAYOUTS.
+    applyRoomTerrain(grid, roomId);
 
     // Roll initiative
     for (const e of entities) {
@@ -456,14 +611,48 @@ export class CombatManager {
     e: CombatEntity,
     dest: GridPosition
   ): CombatEvent[] {
-    if (!canReach(state.grid, e.position, dest, e.stats.speed, e.id)) return [];
+    const route = findPath(state.grid, e.position, dest, e.stats.speed, e.id);
+    if (!route) return [];
+
     setCell(state.grid, e.position, undefined);
     e.position = dest;
     setCell(state.grid, dest, e.id);
-    return [{
+
+    const events: CombatEvent[] = [{
       type: "move", round: state.round, entityId: e.id, position: dest,
+      path: route.path,
       text: `${e.name} moves to (${dest.x}, ${dest.y}).`,
     }];
+
+    // Hazard terrain bites whatever ends its move standing on it.
+    events.push(...this.applyHazard(state, e));
+    return events;
+  }
+
+  /**
+   * Apply fire-tile (embers) damage to an entity that has just settled onto a
+   * hazard tile. Returns the resulting events (burn damage, and a death if it
+   * drops them). No-op on safe ground, so it's cheap to call after any move.
+   */
+  private applyHazard(state: CombatState, e: CombatEntity): CombatEvent[] {
+    const cell = getCell(state.grid, e.position);
+    const dmg = cell ? hazardDamage(cell.type) : 0;
+    if (dmg <= 0 || e.isDead) return [];
+
+    e.hp = Math.max(0, e.hp - dmg);
+    const events: CombatEvent[] = [{
+      type: "burn_damage", round: state.round, entityId: e.id, value: dmg,
+      text: `${e.name} steps into the embers and takes ${dmg} fire damage (${e.hp}/${e.maxHp}).`,
+    }];
+    if (e.hp <= 0) {
+      e.isDead = true;
+      setCell(state.grid, e.position, undefined);
+      events.push({
+        type: "entity_dies", round: state.round, entityId: e.id,
+        text: `${e.name} falls in the embers.`,
+      });
+    }
+    return events;
   }
 
   // ── Action ─────────────────────────────────────────────────────────────────
@@ -503,13 +692,19 @@ export class CombatManager {
     const weapon = attacker.stats.equippedWeapon;
     if (manhattan(attacker.position, target.position) > weapon.range) return events;
 
-    const result = rollAttack(attacker.stats, target.stats.ac, weapon);
+    // Cover: a target fighting from a cover tile is harder to hit.
+    const targetCell = getCell(state.grid, target.position);
+    const cover      = targetCell ? coverBonus(targetCell.type) : 0;
+    const effectiveAc = target.stats.ac + cover;
 
+    const result = rollAttack(attacker.stats, effectiveAc, weapon);
+
+    const coverNote = cover > 0 ? ` (+${cover} cover)` : "";
     events.push({
       type: "attack_roll", round: state.round,
       entityId: attacker.id, targetId: target.id,
-      roll: { d20: result.roll.result, modifier: result.roll.modifier, total: result.roll.total, dc: target.stats.ac },
-      text: `${attacker.name} attacks ${target.name}: ${result.roll.result}+${result.roll.modifier}=${result.roll.total} vs AC ${target.stats.ac}`,
+      roll: { d20: result.roll.result, modifier: result.roll.modifier, total: result.roll.total, dc: effectiveAc },
+      text: `${attacker.name} attacks ${target.name}: ${result.roll.result}+${result.roll.modifier}=${result.roll.total} vs AC ${effectiveAc}${coverNote}`,
     });
 
     if (result.hit && result.damage) {
@@ -566,14 +761,31 @@ export class CombatManager {
     const ability = caster.stats.classAbilities?.find(a => a.id === abilityId);
     if (!ability || ability.type !== "active") return events;
     if (ability.cooldownRounds > 0 && (caster.abilityUses[abilityId] ?? 0) <= 0) return events;
+
+    const target = targetId ? state.entities.find(e => e.id === targetId) : undefined;
+
+    // Range gate (safety net — the client already restricts targeting). A
+    // targeted ability needs a living target within reach, measured from the
+    // caster's CURRENT tile, which is their post-move position since moves
+    // resolve before actions. Out of reach → the ability neither fires nor
+    // expends its use.
+    if (ability.targetType === "enemy" || ability.targetType === "ally") {
+      const reach = abilityRange(ability, caster.stats.equippedWeapon.range);
+      if (!target || target.isDead || manhattan(caster.position, target.position) > reach) {
+        events.push({
+          type: "ability_used", round: state.round, entityId: caster.id,
+          abilityId, text: `${caster.name} readies ${ability.name}, but the target is out of reach.`,
+        });
+        return events;
+      }
+    }
+
     if (ability.cooldownRounds > 0) caster.abilityUses[abilityId] = 0;
 
     events.push({
       type: "ability_used", round: state.round, entityId: caster.id,
       abilityId, text: `${caster.name} uses ${ability.name}!`,
     });
-
-    const target = targetId ? state.entities.find(e => e.id === targetId) : undefined;
 
     // Healing
     if (ability.effect.heal) {

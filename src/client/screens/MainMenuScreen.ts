@@ -22,8 +22,12 @@
  */
 
 import type { SaveSlotSummary } from "../../types/network";
+import { playSelect } from "../util/audio";
 
 type MenuMode = "root" | "new" | "load";
+
+/** How long the cover-close swing takes (matches #book-cover transition). */
+const BOOK_CLOSE_MS = 1200;
 
 // ── Fog layer config ──────────────────────────────────────────────────────────
 
@@ -52,6 +56,7 @@ const FOG_LAYERS: FogLayer[] = [
 
 export class MainMenuScreen {
   private readonly root: HTMLElement;
+  private readonly book: HTMLElement;
   private readonly rootButtons: HTMLElement;
   private readonly slotPanel: HTMLElement;
   private readonly slotList: HTMLElement;
@@ -62,6 +67,9 @@ export class MainMenuScreen {
 
   private slots: SaveSlotSummary[] = [];
   private mode: MenuMode = "root";
+
+  /** Pending timer that hides the slot page after the cover closes. */
+  private closeTimer: number | null = null;
 
   private onNewGame:   ((slot: number) => void) | null = null;
   private onLoadGame:  ((slot: number) => void) | null = null;
@@ -76,6 +84,7 @@ export class MainMenuScreen {
 
   constructor() {
     this.root        = this.requireEl("screen-menu");
+    this.book        = this.requireEl("menu-book");
     this.rootButtons = this.requireEl("menu-root-buttons");
     this.slotPanel   = this.requireEl("menu-slot-panel");
     this.slotList    = this.requireEl("menu-slot-list");
@@ -111,11 +120,17 @@ export class MainMenuScreen {
     if (this.mode !== "root") this.renderSlots();
   }
 
-  /** Resets the menu to its root (two-button) view */
+  /** Resets the menu to its root view: the cover swings shut. */
   public reset(): void {
     this.mode = "root";
-    this.slotPanel.classList.add("hidden");
-    this.rootButtons.classList.remove("hidden");
+    this.book.classList.remove("book-open");
+    // Keep the slot page visible while the cover closes over it, then hide
+    // it so it can't be reached (or focused) under the closed cover.
+    if (this.closeTimer !== null) window.clearTimeout(this.closeTimer);
+    this.closeTimer = window.setTimeout(() => {
+      if (this.mode === "root") this.slotPanel.classList.add("hidden");
+      this.closeTimer = null;
+    }, BOOK_CLOSE_MS);
   }
 
   /**
@@ -240,13 +255,23 @@ export class MainMenuScreen {
     this.backButton.addEventListener("click",  () => this.reset());
   }
 
+  /**
+   * Opens the book to the slot page. The cover (which carries the root
+   * buttons) swings away on its hinge, so the buttons are never hidden —
+   * they simply rotate out of view with the leather.
+   */
   private enterMode(mode: MenuMode): void {
     this.mode = mode;
+    if (this.closeTimer !== null) {
+      window.clearTimeout(this.closeTimer);
+      this.closeTimer = null;
+    }
     this.slotTitle.textContent =
-      mode === "new" ? "NEW GAME — CHOOSE A SLOT" : "LOAD GAME — CHOOSE A SLOT";
-    this.rootButtons.classList.add("hidden");
+      mode === "new" ? "New Game — Choose a Slot" : "Load Game — Choose a Slot";
     this.slotPanel.classList.remove("hidden");
     this.renderSlots();
+    playSelect();
+    this.book.classList.add("book-open");
   }
 
   /**

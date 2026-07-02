@@ -36,6 +36,10 @@ export const AUTHORED_QUESTS: Quest[] = [
     generated: false,
     objectiveRoomId: "cellar",
     objectiveKind: "clear",
+    resolution:
+      "Aldric wipes a tankard, listening to the quiet below. \"No more scratching in " +
+      "the walls. First peace this cellar's had in a month.\" He slides you a drink " +
+      "on the house. \"You're alright, you know that? Door's always open to you here.\"",
   },
   {
     id: "authored-fog-scout",
@@ -59,6 +63,11 @@ export const AUTHORED_QUESTS: Quest[] = [
       "the caravan's strongbox, forced open and emptied, and a driver's glove " +
       "with the fingers frozen mid-grasp. Whatever took them, it came from above " +
       "the road, out of the fog. Captain Vey will want to hear this.",
+    resolution:
+      "Vey turns the frozen glove over in her hands for a long moment, jaw tight. " +
+      "\"Taken from above. So it's not just beasts out there — it's hunting.\" She " +
+      "presses the Lantern of Warding into your grip. \"This kept my father alive in " +
+      "the old fog. Carry it. And keep your eyes on the sky.\"",
   },
   {
     id: "authored-herbs",
@@ -81,6 +90,11 @@ export const AUTHORED_QUESTS: Quest[] = [
       "Sister Mara said — pale cups that drink the dark. You gather the freshest " +
       "blooms with care; bruise them and the sap turns bitter and useless. A " +
       "handful should be enough for her draughts.",
+    resolution:
+      "Sister Mara cradles the moonpetals as though they were newborn. \"Fresh, and " +
+      "not a one bruised. Bless you.\" Down the ward, a child's fever has already " +
+      "begun to break. \"You didn't just fetch flowers,\" she says softly. \"You " +
+      "bought that little one another morning. I won't forget it.\"",
   },
   {
     id: "authored-bell",
@@ -104,6 +118,11 @@ export const AUTHORED_QUESTS: Quest[] = [
       "faintly breathing. It drinks the sound before the bell can make it. You " +
       "work a sample free with your knife. Old Hollis kept the chapel for forty " +
       "years; he should see this.",
+    resolution:
+      "Old Hollis holds the grey, breathing knot to the lamplight and his hands " +
+      "start to shake. \"Forty years I rang that bell at dawn. Forty years it kept " +
+      "the dark honest.\" He closes your fingers around the Bellringer's Seal. \"It " +
+      "will ring again because of you. Go on — I want to hear it while I still can.\"",
   },
   {
     id: "authored-wolves",
@@ -120,6 +139,11 @@ export const AUTHORED_QUESTS: Quest[] = [
     generated: false,
     objectiveRoomId: "fog_road",
     objectiveKind: "clear",
+    resolution:
+      "The last wolf's howl thins into the fog and does not return. Word runs ahead " +
+      "of you to the gate, where Captain Vey meets you at the wall. \"The nightwatch " +
+      "can sleep tonight,\" she says, and means it. \"The pack won't test that wall " +
+      "again soon. The town owes you a quiet night — take it.\"",
   },
   {
     id: "authored-fog-boss",
@@ -151,6 +175,11 @@ export const AUTHORED_QUESTS: Quest[] = [
     generated: false,
     objectiveRoomId: "market_square",
     objectiveKind: "deliver",
+    resolution:
+      "The shut-in's door opens a crack, then wider. Thin hands take the draught, " +
+      "and for the first time in a long while, the old soul on the other side smiles. " +
+      "\"Isolde sent you? Tell her... tell her I said thank you. And that I'm not " +
+      "ready to go yet.\" The door closes gently. It's done.",
   },
 ];
 
