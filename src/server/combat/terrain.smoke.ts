@@ -85,6 +85,23 @@ check("a fog battle earns dramatic tactical terrain", () => {
   }
 });
 
+function maxElevation(grid: { elevation?: number }[][]): number {
+  let max = 0;
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const e = grid[y]![x]!.elevation ?? 0;
+    if (y === 7 || y === 0) assert.equal(e, 0, `spawn row (${x},${y}) stays flat`);
+    if (e > max) max = e;
+  }
+  return max;
+}
+
+check("the cellar is flat (no elevation), the fogland has relief", () => {
+  const cellar = freshCombat("cellar");
+  assert.equal(maxElevation(cellar.state.grid as { elevation?: number }[][]), 0, "cellar has no raised tiles");
+  const fog = freshCombat("fog_road");
+  assert.ok(maxElevation(fog.state.grid as { elevation?: number }[][]) >= 1, "fog_road has raised ground");
+});
+
 function playerMoveEvents(dest: GridPosition): CombatEvent[] {
   const { mgr, state, player } = freshCombat();
   mgr.submitAction(state.id, { entityId: player.id, move: dest });

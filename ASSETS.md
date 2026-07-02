@@ -93,13 +93,37 @@ with hand-drawn PNGs. 10 talking/quest NPCs:
 
 ---
 
-## 4. Enemies — ⬜ optional (data-only today)
+## 4. Combatant Sprites — `public/assets/sprites/{artKey}.png` 🆕 (drop-in ready)
 
-Combat is tile-based with no enemy portraits. If art is wanted later, roster
-from `src/server/combat/enemyTemplates.ts`:
+The 2.5D combat board now has a **sprite drop-in seam**. Each combatant carries a
+`sprite` art key; when that key is registered, the board draws the PNG as an
+upright, billboarded sprite (FF-Tactics style) in place of the placeholder disc,
+and every step/hit/cast animation applies to it automatically.
 
-Cellar Rat · Bold Rat · Fog-Wolf · Pack Alpha · Road Bandit · Greyfall Ghoul ·
-Fog Shade · Hollow Wraith · The Fogmother (boss).
+**To add a combatant sprite (two steps, no other code):**
+1. Drop `{artKey}.png` into `public/assets/sprites/` — a tall, upright figure on a
+   **transparent background**, anchored so its feet are at the bottom edge.
+   Recommended ~128×192 px; it's drawn ~1.4× tile size, rising above the tile.
+2. Add `"{artKey}"` to `SPRITE_MANIFEST` in
+   `src/client/screens/CombatScreen.ts` (the gate that prevents 404s for
+   unmade art), then `npm run build:client`.
+
+**Art keys:**
+- **Players** — the class name lowercased: `warrior`, `mage`, `archer`, `healer`,
+  `knight`, plus any other class in `src/types/character.ts`.
+- **Enemies** — the template `key` from `src/server/combat/enemyTemplates.ts`:
+  `rat` (Cellar Rat) · `rat_bold` (Bold Rat) · `fog_wolf` (Fog-Wolf) ·
+  `fog_wolf_alpha` (Pack Alpha) · `bandit` (Road Bandit) · `ghoul` (Greyfall
+  Ghoul) · `shade` (Fog Shade) · `wraith` (Hollow Wraith) · `fog_boss` (The
+  Fogmother).
+
+**Tile relief note (no art needed):** the combat board now extrudes tiles into
+solid blocks and raises terrain per room (visual only — see `GridCell.elevation`
+and `ROOM_ELEVATION` in `CombatManager.ts`). Indoor rooms (cellar) stay flat;
+outdoor rooms (`fog_road`, `fogheart`) have a raised midfield ridge. When you
+paint per-terrain **tile faces**, the top face is the `.cs-cell` background and
+the two visible side walls are `.cs-riser-s` / `.cs-riser-e` in CombatScreen's
+styles — theme them there.
 
 ---
 
@@ -121,5 +145,5 @@ Bellringer's Seal, Fogbreaker's Crown.
 | 2 | NPC portrait PNGs (replacing SVG) | 10 | ⬜ needs art + small code change |
 | 3 | Reskin existing room tiles | 12 | ✅ placeholders — drop-in replace |
 | 3 | Reskin creation portraits | 42 | ✅ placeholders — drop-in replace |
-| — | Enemy art | 9 | ⬜ optional |
+| 2 | Combatant sprites (players + enemies) | ~14 | 🆕 drop-in seam ready (`SPRITE_MANIFEST` + `public/assets/sprites/`) |
 | — | Item icons | 16 | ⬜ optional |

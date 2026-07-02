@@ -43,6 +43,14 @@ export interface GridCell {
   passable: boolean;
   /** Id of entity currently occupying this cell, if any. */
   entityId?: string;
+  /**
+   * Terrain height in whole "levels" (0 = ground). Purely presentational for
+   * now — the renderer extrudes and lifts the tile so battlefields read with
+   * real depth (a ridge, a mound), but movement/line-of-sight ignore it, so
+   * adding elevation to a room never changes its balance. Absent = 0 (flat).
+   * Indoor rooms (e.g. the tavern cellar) stay flat; outdoor rooms earn relief.
+   */
+  elevation?: number;
 }
 
 // ─── Tactical terrain (shared by server math + client renderer) ─────────────────
@@ -113,6 +121,8 @@ export interface CombatEntity {
   /** Remaining uses per ability id; 0 = on cooldown. */
   abilityUses: Record<string, number>;
   isDead: boolean;
+  /** Art key for the combatant's sprite (see CombatEntityView.sprite). */
+  sprite?: string;
 }
 
 /** Lean per-player view of an entity sent over the network. */
@@ -132,6 +142,14 @@ export interface CombatEntityView {
   /** Only present for the receiving player's own entity. */
   weapon?: Weapon;
   abilities?: AbilityStatus[];
+  /**
+   * Art key for this combatant's sprite, e.g. "warrior", "mage", "rat",
+   * "fog_wolf". The renderer looks for `/assets/sprites/<sprite>.png` and, when
+   * present (registered in the client sprite manifest), draws it in place of the
+   * placeholder token. Absent/unregistered → the lettered gradient token. This
+   * is the drop-in seam for 2.5D character art — no code change to add sprites.
+   */
+  sprite?: string;
 }
 
 export interface AbilityStatus {

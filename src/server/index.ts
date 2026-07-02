@@ -39,6 +39,7 @@ import { JsonFileSaveStore, buildSaveData } from "./persistence/SaveStore";
 import type { SaveStore } from "./persistence/SaveStore";
 import { PartyManager } from "./party/PartyManager";
 import { QuestManager } from "./quest/QuestManager";
+import { EPILOGUE_SCENES } from "./quest/epilogue";
 import { worldManager } from "./world/WorldManager";
 import { TOWN_CODEX } from "./world/townCodex";
 import { combatManager, buildPlayerCombatEntity, buildEnemyFromTemplate } from "./combat/CombatManager";
@@ -1233,6 +1234,14 @@ function grantQuestCompletion(player: Player, ownerKey: string): void {
   // Resolve the authored reward item (a display name) to a catalog entry, if any.
   const rewardItem = reward.item ? itemByName(reward.item) : undefined;
 
+  // The giver's spoken resolution — the story beat that lands before the reward.
+  // Spoken as NPC dialogue (with portrait) when the giver stands in the room;
+  // otherwise delivered as aftermath narration so we never show a portrait for
+  // someone who isn't present (deliveries, remote clears).
+  const giverNpc = worldManager.getQuestGiverNpcId(active.quest.id)
+    ? worldManager.getNpcById(worldManager.getQuestGiverNpcId(active.quest.id)!)
+    : undefined;
+
   for (const member of recipients) {
     if (member.progression) {
       const before = member.progression.level;
@@ -1250,6 +1259,27 @@ function grantQuestCompletion(player: Player, ownerKey: string): void {
     if (rewardItem) member.inventory = addItem(member.inventory, rewardItem.id);
     saveProgress(member);
 
+    // Spoken resolution — the payoff beat, delivered just before the reward.
+    if (active.quest.resolution) {
+      const coLocated = !!giverNpc && giverNpc.roomId === member.roomId;
+      if (coLocated) {
+        sendToPlayer(member.socket, {
+          type: "speaker_portrait",
+          payload: { name: giverNpc!.name, role: giverNpc!.role, side: "left" },
+        });
+        sendToPlayer(member.socket, {
+          type: "chat",
+          payload: { speaker: giverNpc!.name, message: active.quest.resolution },
+        });
+      } else {
+        // Giver isn't present — deliver as aftermath narration (no portrait).
+        sendToPlayer(member.socket, {
+          type: "system",
+          payload: { message: active.quest.resolution },
+        });
+      }
+    }
+
     sendToPlayer(member.socket, { type: "system", payload: { message: rewardLine } });
     sendQuestBoard(member, member.socket);
 
@@ -1263,6 +1293,15 @@ function grantQuestCompletion(player: Player, ownerKey: string): void {
         originNpcId: giverNpcId,
         kind: "deed",
         detail: `saw "${active.quest.title}" through`,
+      });
+    }
+
+    // The ending. Defeating the Fogmother is the campaign's climax — play the
+    // epilogue cinematic for everyone who shared in the victory.
+    if (active.quest.id === "authored-fog-boss") {
+      sendToPlayer(member.socket, {
+        type: "epilogue",
+        payload: { scenes: EPILOGUE_SCENES },
       });
     }
   }

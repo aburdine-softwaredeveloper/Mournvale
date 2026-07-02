@@ -373,6 +373,71 @@ html, body {
   animation: blink-step 1s steps(1) infinite;
 }
 
+/* ── Ending / epilogue screen ─────────────────────────────
+   Mirrors the intro, but the backdrop clears into dawn as the story
+   resolves: --dawn (0..1, set per scene by EndingScreen) drives a warm
+   radial glow that brightens the tooled-leather cover. */
+#screen-ending {
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 8%, #2a2620 0%, #1c1813 60%, #141009 100%);
+  --dawn: 0;
+}
+
+#screen-ending::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Rising dawn: a warm glow low on the sky that grows with --dawn. */
+  background:
+    radial-gradient(140% 80% at 50% 118%,
+      rgba(226, 178, 104, calc(var(--dawn) * 0.55)) 0%,
+      rgba(180, 120, 66, calc(var(--dawn) * 0.28)) 34%,
+      rgba(40, 30, 18, 0) 68%);
+  opacity: 1;
+  transition: background 1.6s ease-out;
+  z-index: 1;
+}
+
+#ending-content {
+  max-width: 700px;
+  width: 90%;
+  padding: 24px;
+  position: relative;
+  z-index: 2;
+}
+
+#ending-header {
+  color: #e6c98a;
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+  text-align: center;
+  border-bottom: 1px solid var(--color-border-gold);
+  padding-bottom: 12px;
+}
+
+#ending-text {
+  color: #f0e6cc;
+  font-size: 10px;
+  line-height: 2;
+  min-height: 120px;
+  white-space: pre-wrap;
+  text-align: center;
+}
+
+#ending-cursor {
+  color: #d0b684;
+  font-size: 8px;
+  margin-top: 24px;
+  text-align: right;
+}
+
 @keyframes blink-step {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }
@@ -1413,6 +1478,12 @@ html, body {
    reveal the single .skill-mode container. */
 .skill-mode { display: none; }
 .snes-panel.skills-active > :not(.skill-mode) { display: none; }
+/* #message-log and #room-image are targeted by ID elsewhere (display: flex),
+   which out-specifies the rule above — so they'd leak into the skills screen
+   (the message log above the ability list, the room art above the talents).
+   These ID-scoped overrides win and keep the skills panels clean. */
+.skills-active > #message-log,
+.skills-active > #room-image { display: none; }
 .snes-panel.skills-active > .skill-mode {
   display: flex;
   flex-direction: column;

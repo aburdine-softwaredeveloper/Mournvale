@@ -98,6 +98,31 @@ const ROOM_LAYOUTS: Record<string, TerrainPlacement[]> = {
   fogheart: FOGLAND_LAYOUT,
 };
 
+/** A single tile's raised height, in whole levels (visual only). */
+interface ElevationPlacement { pos: GridPosition; level: number; }
+
+/**
+ * Per-room terrain RELIEF. Elevation is purely visual (see GridCell.elevation) —
+ * it never changes movement or line-of-sight, so it can't unbalance a fight. Use
+ * it to give outdoor battlefields real shape. Indoor rooms stay flat by simply
+ * having no entry here: a tavern cellar has a stone floor, not hills.
+ *
+ * Kept off the spawn rows (y 0 and 7) so no combatant starts perched on a ledge,
+ * and shaped as a gentle central rise rather than a cliff.
+ */
+const FOGLAND_ELEVATION: ElevationPlacement[] = [
+  // A low broken ridge running through the midfield — high ground at the centre.
+  { pos: { x: 3, y: 3 }, level: 1 }, { pos: { x: 4, y: 3 }, level: 2 }, { pos: { x: 5, y: 3 }, level: 1 },
+  { pos: { x: 3, y: 4 }, level: 1 }, { pos: { x: 4, y: 4 }, level: 2 }, { pos: { x: 5, y: 4 }, level: 1 },
+  { pos: { x: 2, y: 3 }, level: 1 }, { pos: { x: 6, y: 4 }, level: 1 },
+];
+
+const ROOM_ELEVATION: Record<string, ElevationPlacement[]> = {
+  // cellar intentionally absent → flat.
+  fog_road: FOGLAND_ELEVATION,
+  fogheart: FOGLAND_ELEVATION,
+};
+
 /**
  * Stamp the room-appropriate terrain onto the board. Only writes onto empty
  * floor tiles, so it's safe to call after entities are placed. Unknown rooms get
@@ -108,6 +133,11 @@ function applyRoomTerrain(grid: GridCell[][], roomId: string): void {
   for (const { pos, type } of layout) {
     const cell = getCell(grid, pos);
     if (cell && cell.type === "floor" && !cell.entityId) setTerrain(grid, pos, type);
+  }
+  // Relief (visual only). Rooms without an entry stay flat.
+  for (const { pos, level } of ROOM_ELEVATION[roomId] ?? []) {
+    const cell = getCell(grid, pos);
+    if (cell) cell.elevation = level;
   }
 }
 
@@ -230,6 +260,7 @@ function buildEntityView(e: CombatEntity, isOwner: boolean): CombatEntityView {
     conditions: e.conditions,
     isDead:     e.isDead,
     ...(e.playerId !== undefined && { playerId: e.playerId }),
+    ...(e.sprite !== undefined && { sprite: e.sprite }),
     ...(isOwner && { weapon: e.stats.equippedWeapon, abilities }),
   };
 }
@@ -324,6 +355,8 @@ export function buildEnemyFromTemplate(params: {
     conditions:  [],
     abilityUses: {},
     isDead:      false,
+    // Sprite art key = the template key ("rat", "fog_wolf", …). See sprite manifest.
+    sprite:      tmpl.key,
   };
 }
 
@@ -388,6 +421,8 @@ export function buildPlayerCombatEntity(params: {
     conditions:  [],
     abilityUses: { ...stats.abilityUses },
     isDead:      false,
+    // Sprite art key = the class name lowercased ("warrior", "mage", …).
+    sprite:      params.characterClass.toLowerCase(),
   };
 }
 

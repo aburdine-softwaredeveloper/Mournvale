@@ -122,6 +122,27 @@ export interface DialogueMessage {
   };
 }
 
+/** A single scene in the ending cinematic — a header + typewritten body. */
+export interface EpilogueScene {
+  /** Optional title shown above the body (e.g. "The Fog Lifts"). */
+  header?: string;
+  /** The narrative text, typed out scene by scene. */
+  text: string;
+}
+
+/**
+ * Plays the ending. Sent when the final quest (the Fogmother) is defeated —
+ * the client shows a full-screen epilogue cinematic, then returns to the game
+ * in a world where the Greyfall has lifted. Delivered to every party member
+ * who shared the killing blow's reward.
+ */
+export interface EpilogueMessage {
+  type: "epilogue";
+  payload: {
+    scenes: EpilogueScene[];
+  };
+}
+
 /** Signals the client to transition to a new screen/state */
 export interface StateTransitionMessage {
   type: "state_transition";
@@ -625,6 +646,7 @@ export type ServerMessage =
   | ChatMessage
   | SpeakerPortraitMessage
   | DialogueMessage
+  | EpilogueMessage
   | StateTransitionMessage
   | CharacterConfirmedMessage
   | PlayerPresenceMessage

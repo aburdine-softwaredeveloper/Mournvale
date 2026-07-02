@@ -76,6 +76,29 @@ function buffTone(abilityId: string): "ward" | "rally" {
   return DEFENSIVE_BUFFS.has(abilityId) ? "ward" : "rally";
 }
 
+/**
+ * ── ART DROP-IN SEAM: character/enemy sprites ──────────────────────────────
+ *
+ * Registered sprite art keys. A combatant's `sprite` (set server-side from its
+ * class or enemy template — "warrior", "mage", "rat", "fog_wolf", …) is drawn
+ * as a billboarded 2.5D sprite ONLY when its key is listed here; otherwise the
+ * combatant falls back to the placeholder lettered token. Gating on this set
+ * means we never request a PNG that doesn't exist yet (no 404 spam).
+ *
+ * TO ADD ART: drop `<key>.png` into `public/assets/sprites/` (a tall, upright,
+ * transparent-background sprite — FF Tactics style) and add its `<key>` here.
+ * That's the whole change; the renderer wires it to the existing step/hit/cast
+ * animations automatically.
+ */
+const SPRITE_MANIFEST = new Set<string>([
+  // e.g. "warrior", "mage", "archer", "healer", "rat", "fog_wolf", "fog_boss"
+]);
+
+/** Path to a registered sprite; callers must check SPRITE_MANIFEST first. */
+function spriteUrl(key: string): string {
+  return `/assets/sprites/${key}.png`;
+}
+
 export class CombatScreen {
   private readonly el: HTMLElement;
   private readonly playerId: string;
@@ -509,6 +532,20 @@ export class CombatScreen {
         div.dataset.y = String(row);
         div.addEventListener("mouseenter", () => this.onCellHover({ x: col, y: row }));
         div.addEventListener("mouseleave", () => this.onCellLeave());
+
+        // Elevation (visual only): lift the tile and give it side walls so the
+        // board reads with real depth. Every tile has a base thickness (a solid
+        // floor slab); raised tiles add height on top. The two visible block
+        // faces (south + east in the 45° view) are drawn as .cs-riser children.
+        const elev = cell?.elevation ?? 0;
+        div.style.setProperty("--elev", String(elev));
+        const riserS = document.createElement("div");
+        riserS.className = "cs-riser cs-riser-s";
+        const riserE = document.createElement("div");
+        riserE.className = "cs-riser cs-riser-e";
+        div.appendChild(riserS);
+        div.appendChild(riserE);
+
         const terrain = (cell?.type ?? "floor") as GridCellType;
         if (terrain !== "floor") {
           div.classList.add(`cell-${terrain}`);
@@ -542,6 +579,18 @@ export class CombatScreen {
           const letter = document.createElement("span");
           letter.className   = "cs-token-letter";
           letter.textContent = entity.name.charAt(0).toUpperCase();
+
+          // Art drop-in: if this combatant's sprite is registered, draw it as a
+          // billboarded sprite that covers the placeholder token. The sprite
+          // rides the same token element, so every step/hit/cast animation and
+          // the iso billboard transform apply to it for free.
+          if (entity.sprite && SPRITE_MANIFEST.has(entity.sprite)) {
+            token.classList.add("cs-token-sprited");
+            const sprite = document.createElement("div");
+            sprite.className = "cs-token-sprite";
+            sprite.style.backgroundImage = `url(${spriteUrl(entity.sprite)})`;
+            token.appendChild(sprite);
+          }
 
           const hpWrap = document.createElement("div");
           hpWrap.className = "cs-hp-wrap";
@@ -1067,11 +1116,30 @@ export class CombatScreen {
         box-shadow:0 3px 10px rgba(0,0,0,.4); }
       .cs-hint-icon { color:#d8b878; flex-shrink:0; }
       #cs-hint-text { flex:1; }
-      #cs-grid { transition:transform .45s ease; transform-style:preserve-3d; }
+      /* --base-thick: slab thickness every tile has; --elev-step: added height
+         per elevation level. Both feed the tile lift + riser (side-wall) faces. */
+      #cs-grid { transition:transform .45s ease; transform-style:preserve-3d; --base-thick:7px; --elev-step:16px; }
       /* 2.5D isometric (dimetric) tilt — the board lies on a ground plane. */
       #cs-grid.cs-iso { transform:rotateX(55deg) rotateZ(45deg); }
       .cs-cell { width:60px; height:60px; background:#c9b489; border:1px solid #8a6f48; border-radius:4px; display:flex; align-items:center; justify-content:center; position:relative; box-sizing:border-box; transform-style:preserve-3d; }
       .cs-iso .cs-cell { box-shadow:inset 0 0 0 1px rgba(120,96,56,.5), 0 1px 0 rgba(60,44,24,.35); }
+      /* ── Tile extrusion + elevation (iso only) ──
+         Lift the tile top by its total block height, then hang two side faces
+         (south + east — the shaded sides in a 45° view) down to the ground so
+         the tile reads as a solid block / raised ground. Flat rooms keep a thin
+         uniform slab (base-thick); raised tiles rise on top. Visual only. */
+      .cs-iso .cs-cell { transform:translateZ(calc(var(--base-thick) + var(--elev,0) * var(--elev-step))); }
+      .cs-riser { display:none; }
+      .cs-iso .cs-riser { display:block; position:absolute; pointer-events:none; z-index:0;
+        --h:calc(var(--base-thick) + var(--elev,0) * var(--elev-step)); }
+      /* South wall: hinged along the tile's bottom edge, swung down to ground. */
+      .cs-iso .cs-riser-s { left:-1px; right:-1px; top:100%; height:var(--h);
+        transform-origin:top center; transform:rotateX(-90deg);
+        background:linear-gradient(#8a6f48,#5c4a2e); }
+      /* East wall: hinged along the tile's right edge, swung down to ground. */
+      .cs-iso .cs-riser-e { top:-1px; bottom:-1px; left:100%; width:var(--h);
+        transform-origin:left center; transform:rotateY(90deg);
+        background:linear-gradient(90deg,#9a7c52,#6b5636); }
       .cell-wall { background:#6e5836; border-color:#5a4630; }
       /* Interaction highlights are scoped under #cs-grid so their specificity
          (id + class) beats any board THEME rule (e.g. the cellar's grey
@@ -1142,6 +1210,9 @@ export class CombatScreen {
       .cs-theme-cellar .cs-cell { background:#bdb9af; border-color:#6e6b64; }
       .cs-theme-cellar.cs-iso .cs-cell { box-shadow:inset 0 0 0 1px rgba(90,88,82,.5), 0 1px 0 rgba(40,40,38,.4); }
       .cs-theme-cellar .cell-wall { background:#7d7a73; border-color:#5a5852; }
+      /* Cellar block sides: cold grey stone to match the floor slab. */
+      .cs-theme-cellar.cs-iso .cs-riser-s { background:linear-gradient(#6e6b64,#4a4843); }
+      .cs-theme-cellar.cs-iso .cs-riser-e { background:linear-gradient(90deg,#7d7a72,#565450); }
       /* Movement trail: faint footfalls the mover has just crossed. */
       .cell-trail::after { content:""; position:absolute; inset:32%;
         border-radius:50%; background:rgba(216,184,120,.5);
@@ -1159,6 +1230,16 @@ export class CombatScreen {
         border-color:#b04632; box-shadow:0 8px 10px rgba(15,9,4,.6), inset 0 2px 4px rgba(255,200,180,.35), inset 0 -5px 7px rgba(0,0,0,.45); }
       .cs-token-mine   { border-color:#f0d28a; box-shadow:0 8px 10px rgba(15,9,4,.6), 0 0 0 2px rgba(240,210,138,.55) inset, inset 0 2px 4px rgba(255,235,190,.4); }
       .cs-token-dead   { opacity:.3; filter:grayscale(1); }
+      /* ── Sprite art (drop-in) ──
+         When a registered sprite is drawn, the placeholder disc/letter give way
+         to the artwork. The sprite is anchored to the tile at its base and rises
+         above the token, so tall FF-Tactics-style characters stand up off the
+         board. HP bar stays on top (later sibling). */
+      .cs-token-sprited { background:none !important; border-color:transparent !important; box-shadow:none !important; }
+      .cs-token-sprited .cs-token-letter { display:none; }
+      .cs-token-sprite { position:absolute; left:-20%; right:-20%; bottom:0; top:-70%;
+        background-repeat:no-repeat; background-position:center bottom; background-size:contain;
+        pointer-events:none; filter:drop-shadow(0 5px 4px rgba(15,9,4,.55)); }
       /* Playback flashes — a step pop, a hit jolt, a heal glow. */
       .cs-token-step { animation:cs-step .15s ease; }
       @keyframes cs-step { 50% { transform:scale(1.14); } }

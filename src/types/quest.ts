@@ -77,6 +77,13 @@ export interface Quest {
    * room description. Shown only while this quest is the player's active one.
    */
   lookClue?: string;
+  /**
+   * The words the quest giver speaks the moment the quest completes — the
+   * emotional payoff / resolution. Emitted as NPC speech (with portrait) just
+   * before the reward line, so finishing a job lands as a story beat rather than
+   * a bare "Quest complete" toast. Absent = no spoken resolution (reward only).
+   */
+  resolution?: string;
 }
 
 /**

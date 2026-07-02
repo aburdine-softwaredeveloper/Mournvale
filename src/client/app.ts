@@ -28,6 +28,7 @@ import { ScreenManager } from "./screens/ScreenManager";
 import { BootSplashScreen } from "./screens/BootSplashScreen";
 import { MainMenuScreen } from "./screens/MainMenuScreen";
 import { IntroScreen } from "./screens/IntroScreen";
+import { EndingScreen } from "./screens/EndingScreen";
 import { CharacterCreationScreen } from "./screens/CharacterCreationScreen";
 import { GameScreen } from "./screens/GameScreen";
 import { CombatScreen } from "./screens/CombatScreen";
@@ -71,6 +72,7 @@ class MournvaleClient {
   private readonly boot = new BootSplashScreen();
   private readonly menu = new MainMenuScreen();
   private readonly intro = new IntroScreen();
+  private readonly ending = new EndingScreen();
   private readonly creation = new CharacterCreationScreen();
   private readonly game = new GameScreen();
   private readonly questBoard = new QuestBoard();
@@ -293,6 +295,15 @@ class MournvaleClient {
 
       case "dialogue":
         this.creation.showDialogue(msg);
+        break;
+
+      case "epilogue":
+        // The Fogmother is down — play the ending, then return to the (now
+        // fog-lifted) world. The server keeps the player active throughout.
+        this.screens.show("ending");
+        this.ending.start(msg.payload.scenes, () => {
+          this.screens.show("game");
+        });
         break;
 
       case "character_confirmed":
