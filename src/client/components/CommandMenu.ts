@@ -39,6 +39,7 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   { command: "skills", label: "Skills", shortcut: "c" },
   { command: "inventory", label: "Bag", shortcut: "i" },
   { command: "help",  label: "Help",  shortcut: "h" },
+  { command: "settings", label: "⚙", shortcut: "o" },
 ];
 
 /**

@@ -528,6 +528,9 @@ export class CombatScreen {
 
         const div = document.createElement("div");
         div.className = "cs-cell";
+        // Checkerboard tone variation so the ground reads as laid tiles/turf
+        // rather than one flat wash (pure paint — no gameplay meaning).
+        if ((col + row) % 2 === 1) div.classList.add("cs-cell-alt");
         div.dataset.x = String(col);
         div.dataset.y = String(row);
         div.addEventListener("mouseenter", () => this.onCellHover({ x: col, y: row }));
@@ -1121,8 +1124,23 @@ export class CombatScreen {
       #cs-grid { transition:transform .45s ease; transform-style:preserve-3d; --base-thick:7px; --elev-step:16px; }
       /* 2.5D isometric (dimetric) tilt — the board lies on a ground plane. */
       #cs-grid.cs-iso { transform:rotateX(55deg) rotateZ(45deg); }
-      .cs-cell { width:60px; height:60px; background:#c9b489; border:1px solid #8a6f48; border-radius:4px; display:flex; align-items:center; justify-content:center; position:relative; box-sizing:border-box; transform-style:preserve-3d; }
-      .cs-iso .cs-cell { box-shadow:inset 0 0 0 1px rgba(120,96,56,.5), 0 1px 0 rgba(60,44,24,.35); }
+      /* Ground tiles: worn field flagstone — a soft top-light, two crossed
+         grain passes, and scattered speckles so no tile reads as flat paint.
+         Colour lives in background-color so the .cs-cell-alt checkerboard
+         only swaps the tone underneath the shared texture layers. */
+      .cs-cell { width:60px; height:60px;
+        background-image:
+          radial-gradient(140% 100% at 28% 20%, rgba(255,246,214,.20), transparent 55%),
+          radial-gradient(circle at 72% 68%, rgba(110,80,42,.14) 0 8%, transparent 14%),
+          radial-gradient(circle at 24% 78%, rgba(110,80,42,.10) 0 5%, transparent 11%),
+          repeating-linear-gradient(97deg, rgba(122,90,48,.07) 0 3px, transparent 3px 8px),
+          repeating-linear-gradient(8deg, rgba(90,64,32,.05) 0 2px, transparent 2px 9px);
+        background-color:#c9b489;
+        border:1px solid #8a6f48; border-radius:4px; display:flex; align-items:center; justify-content:center; position:relative; box-sizing:border-box; transform-style:preserve-3d; }
+      .cs-cell-alt { background-color:#bfa87a; }
+      .cs-iso .cs-cell { box-shadow:inset 0 0 0 1px rgba(120,96,56,.5),
+        inset 0 2px 3px rgba(255,244,210,.22), inset 0 -2px 3px rgba(70,50,26,.22),
+        0 1px 0 rgba(60,44,24,.35); }
       /* ── Tile extrusion + elevation (iso only) ──
          Lift the tile top by its total block height, then hang two side faces
          (south + east — the shaded sides in a 45° view) down to the ground so
@@ -1132,14 +1150,21 @@ export class CombatScreen {
       .cs-riser { display:none; }
       .cs-iso .cs-riser { display:block; position:absolute; pointer-events:none; z-index:0;
         --h:calc(var(--base-thick) + var(--elev,0) * var(--elev-step)); }
-      /* South wall: hinged along the tile's bottom edge, swung down to ground. */
+      /* South wall: hinged along the tile's bottom edge, swung down to ground.
+         Earth strata lines make raised ground read as cut soil, not plastic. */
       .cs-iso .cs-riser-s { left:-1px; right:-1px; top:100%; height:var(--h);
         transform-origin:top center; transform:rotateX(-90deg);
-        background:linear-gradient(#8a6f48,#5c4a2e); }
+        background:
+          repeating-linear-gradient(180deg, rgba(0,0,0,.16) 0 2px, transparent 2px 7px),
+          repeating-linear-gradient(92deg, rgba(255,220,160,.05) 0 4px, transparent 4px 11px),
+          linear-gradient(#8a6f48 0%, #6b5334 55%, #4e3b22 100%); }
       /* East wall: hinged along the tile's right edge, swung down to ground. */
       .cs-iso .cs-riser-e { top:-1px; bottom:-1px; left:100%; width:var(--h);
         transform-origin:left center; transform:rotateY(90deg);
-        background:linear-gradient(90deg,#9a7c52,#6b5636); }
+        background:
+          repeating-linear-gradient(90deg, rgba(0,0,0,.13) 0 2px, transparent 2px 7px),
+          repeating-linear-gradient(2deg, rgba(255,220,160,.05) 0 4px, transparent 4px 11px),
+          linear-gradient(90deg, #9a7c52 0%, #7c6138 55%, #5a4628 100%); }
       .cell-wall { background:#6e5836; border-color:#5a4630; }
       /* Interaction highlights are scoped under #cs-grid so their specificity
          (id + class) beats any board THEME rule (e.g. the cellar's grey
@@ -1162,25 +1187,37 @@ export class CombatScreen {
       #cs-grid .cell-target:hover { background:rgba(216,184,120,.6); }
       #cs-grid .cell-planned { border:2px dashed #f0c878; }
       /* ── Tactical terrain ── */
-      /* Rubble: broken stone — difficult ground, mottled grey. */
+      /* Rubble: collapsed masonry — chunks with lit tops and shadowed feet
+         over a bed of grit, so the stones read as three-dimensional. */
       .cell-rubble { background:
-          radial-gradient(circle at 30% 35%, #9a8d76 0 3px, transparent 3px),
-          radial-gradient(circle at 68% 62%, #8a7d66 0 4px, transparent 4px),
-          radial-gradient(circle at 50% 80%, #7d7058 0 2px, transparent 2px),
+          radial-gradient(circle at 28% 32%, #c2b498 0 2px, #94866c 2px 5px, rgba(60,52,38,.55) 5px 6px, transparent 7px),
+          radial-gradient(circle at 66% 58%, #b8a988 0 3px, #8a7d66 3px 6px, rgba(60,52,38,.5) 6px 7px, transparent 8px),
+          radial-gradient(circle at 46% 78%, #ab9c7d 0 2px, #7d7058 2px 4px, rgba(60,52,38,.5) 4px 5px, transparent 6px),
+          radial-gradient(circle at 82% 26%, #9a8d76 0 2px, rgba(60,52,38,.4) 2px 3px, transparent 4px),
+          radial-gradient(circle at 14% 62%, #9a8d76 0 1.5px, transparent 3px),
+          radial-gradient(circle at 58% 14%, rgba(60,52,38,.35) 0 1.5px, transparent 3px),
+          repeating-linear-gradient(23deg, rgba(90,80,60,.10) 0 2px, transparent 2px 6px),
           #a89878; border-color:#776a4f; }
-      /* Cover: crates / low wall you fight from — bluish stone with a notch. */
-      .cell-cover { background:
-          linear-gradient(135deg, #8c9aa6 0 50%, #76828d 50% 100%);
-          border:2px solid #5d6975; box-shadow:inset 0 0 0 2px rgba(255,255,255,.12); }
-      /* Embers: hazard — a banked glow that flickers. */
+      /* Embers: a banked fire pit — white-hot motes over cracked coals,
+         ringed by charred ground, breathing light. */
       .cell-embers { background:
-          radial-gradient(circle at 50% 60%, #ffb347 0 18%, #d8551f 40%, #7a2410 100%);
-          border-color:#5a1c0c; animation:cs-ember 1.3s ease-in-out infinite alternate; }
-      @keyframes cs-ember { from { filter:brightness(.85); } to { filter:brightness(1.2); } }
-      /* Basement props — plain impassable scenery. Rendered as standing 3D
-         objects (see .cs-prop) that billboard upright in the iso view; the tile
-         itself keeps a soft contact shadow so they read as sitting on the floor. */
+          radial-gradient(circle at 40% 46%, rgba(255,240,180,.95) 0 7%, transparent 15%),
+          radial-gradient(circle at 62% 64%, rgba(255,200,110,.9) 0 6%, transparent 14%),
+          radial-gradient(circle at 28% 68%, rgba(255,160,70,.8) 0 5%, transparent 12%),
+          radial-gradient(circle at 70% 34%, rgba(255,150,60,.6) 0 4%, transparent 10%),
+          repeating-linear-gradient(31deg, rgba(20,6,2,.5) 0 2px, transparent 2px 7px),
+          radial-gradient(circle at 50% 55%, #e8763a 0 34%, #96351a 62%, #4e1c0c 88%, #2e0f06 100%);
+          border-color:#3a1206; animation:cs-ember 1.3s ease-in-out infinite alternate;
+          box-shadow:0 0 14px 2px rgba(255,120,40,.28); }
+      @keyframes cs-ember { from { filter:brightness(.85); } to { filter:brightness(1.25); } }
+      /* Prop tiles — the ground beneath standing scenery. Barrel/crate tiles
+         are dusty cellar floor; the cover tile is cool paving so it reads as
+         a defensible spot even before the barricade renders on it. */
       .cell-barrel, .cell-crate { background:#b4b0a6; border-color:#6e6b64; }
+      .cell-cover { background:
+          radial-gradient(circle at 30% 30%, rgba(255,255,255,.12) 0 4px, transparent 6px),
+          linear-gradient(135deg, #8c9aa6 0 50%, #76828d 50% 100%);
+          border-color:#5d6975; }
       .cell-barrel::after, .cell-crate::after, .cell-cover::after {
         content:""; position:absolute; left:50%; top:62%; width:62%; height:30%;
         transform:translate(-50%,-50%); border-radius:50%;
@@ -1189,26 +1226,70 @@ export class CombatScreen {
       .cs-prop { position:absolute; left:50%; bottom:14%; transform-origin:center bottom;
         transform:translateX(-50%); }
       .cs-iso .cs-prop { transform:translateX(-50%) rotateZ(-45deg) rotateX(-55deg) translateZ(10px); }
-      /* Barrel — a staved cask with hoop bands and a curved wood gradient. */
-      .cs-prop-barrel { width:26px; height:34px; border-radius:42% 42% 30% 30% / 26% 26% 18% 18%;
-        background:linear-gradient(90deg,#3e2814 0%,#6e4a2a 22%,#9a6c3c 46%,#6e4a2a 70%,#3a2512 100%);
-        border:1px solid #2c1c0d;
-        box-shadow:inset 0 6px 0 -4px rgba(20,12,4,.6), inset 0 -6px 0 -4px rgba(20,12,4,.6),
-                   inset 0 0 0 1px rgba(225,185,120,.25), 0 6px 7px rgba(15,9,4,.55); }
-      /* Crate — a planked box with a lighter top face for a 3D read. */
-      .cs-prop-crate { width:30px; height:28px;
-        background:linear-gradient(135deg,#8a6536 0%,#a37c48 48%,#6f5028 100%);
-        border:2px solid #4c3318;
-        box-shadow:inset 0 0 0 2px rgba(20,12,4,.18), inset 0 9px 0 -7px rgba(255,230,180,.3),
-                   inset 9px 0 0 -7px rgba(255,230,180,.15), 0 6px 7px rgba(15,9,4,.5); }
-      /* Cover — a low stone barricade you fight from. */
-      .cs-prop-cover { width:34px; height:20px; border-radius:3px;
-        background:linear-gradient(135deg,#9aa6b0 0%,#7a8893 50%,#5d6975 100%);
-        border:1px solid #4a5560;
-        box-shadow:inset 0 6px 0 -5px rgba(255,255,255,.3), 0 5px 6px rgba(15,9,4,.5); }
-      /* Cellar palette: cold grey stone instead of the warm parchment map. */
-      .cs-theme-cellar .cs-cell { background:#bdb9af; border-color:#6e6b64; }
-      .cs-theme-cellar.cs-iso .cs-cell { box-shadow:inset 0 0 0 1px rgba(90,88,82,.5), 0 1px 0 rgba(40,40,38,.4); }
+      /* Barrel — an oak cask: curved body shading, stave seams that follow
+         the curve, two iron hoops with a glint, and a recessed lid on top. */
+      .cs-prop-barrel { width:27px; height:35px; position:relative;
+        border-radius:48% 48% 42% 42% / 13% 13% 11% 11%;
+        background:
+          linear-gradient(100deg, transparent 6%, rgba(255,240,205,.30) 20%, rgba(255,240,205,.06) 38%, transparent 58%),
+          linear-gradient(180deg,
+            transparent 0 15%, #2e2a26 15% 21%, rgba(255,255,255,.20) 21% 22.5%, transparent 22.5% 74%,
+            #2e2a26 74% 80%, rgba(255,255,255,.16) 80% 81.5%, transparent 81.5%),
+          repeating-linear-gradient(90deg, transparent 0 3px, rgba(30,16,6,.45) 3px 4px),
+          linear-gradient(90deg, #33200e 0%, #6e4a2a 20%, #9a6c3c 46%, #6e4a2a 76%, #2c1c0c 100%);
+        border:1px solid #241505;
+        box-shadow:inset 0 2px 2px rgba(255,225,170,.28), inset 0 -3px 4px rgba(15,8,3,.5),
+                   0 6px 7px rgba(15,9,4,.55); }
+      .cs-prop-barrel::before { content:""; position:absolute; left:7%; right:7%; top:-3px;
+        height:8px; border-radius:50%;
+        background:radial-gradient(ellipse at 50% 30%, #a87c48 0%, #7d5830 55%, #4a3016 100%);
+        border:1px solid #241505;
+        box-shadow:inset 0 1px 1px rgba(255,230,180,.35); }
+      /* Crate — rough pine: horizontal planks, a nailed diagonal brace,
+         grain streaks, and iron nail heads in the corners. */
+      .cs-prop-crate { width:31px; height:29px; position:relative; border-radius:2px;
+        background:
+          linear-gradient(180deg, rgba(255,235,185,.30) 0 12%, transparent 32%),
+          linear-gradient(45deg, transparent 0 43%, rgba(58,38,16,.50) 43% 47%, rgba(178,138,86,.55) 47% 53%, rgba(58,38,16,.50) 53% 57%, transparent 57%),
+          repeating-linear-gradient(0deg, transparent 0 6px, rgba(46,28,10,.5) 6px 7px),
+          repeating-linear-gradient(90deg, rgba(255,220,160,.07) 0 2px, transparent 2px 5px),
+          linear-gradient(135deg, #9a7444 0%, #85623a 55%, #5f421e 100%);
+        border:2px solid #3f2a12;
+        box-shadow:inset 0 0 0 2px rgba(210,170,110,.28), inset 0 -4px 6px rgba(20,12,4,.35),
+                   0 6px 7px rgba(15,9,4,.5); }
+      .cs-prop-crate::before { content:""; position:absolute; inset:0; border-radius:2px;
+        background:
+          radial-gradient(circle at 12% 14%, #241708 0 1.4px, rgba(255,235,190,.55) 1.4px 2.1px, transparent 2.8px),
+          radial-gradient(circle at 88% 14%, #241708 0 1.4px, rgba(255,235,190,.55) 1.4px 2.1px, transparent 2.8px),
+          radial-gradient(circle at 12% 86%, #241708 0 1.4px, rgba(255,235,190,.45) 1.4px 2.1px, transparent 2.8px),
+          radial-gradient(circle at 88% 86%, #241708 0 1.4px, rgba(255,235,190,.45) 1.4px 2.1px, transparent 2.8px); }
+      /* Cover — a drystone barricade: mortared granite blocks, mottled faces,
+         a sun-caught top course and a shadowed footing. */
+      .cs-prop-cover { width:37px; height:21px; border-radius:4px 5px 3px 4px;
+        background:
+          linear-gradient(90deg, transparent 0 31%, rgba(40,48,56,.55) 31% 33.5%, transparent 33.5% 64%, rgba(40,48,56,.55) 64% 66.5%, transparent 66.5%),
+          linear-gradient(0deg, transparent 0 47%, rgba(40,48,56,.5) 47% 53%, transparent 53%),
+          radial-gradient(circle at 20% 28%, rgba(255,255,255,.18) 0 3px, transparent 5px),
+          radial-gradient(circle at 72% 62%, rgba(20,26,32,.28) 0 3px, transparent 5px),
+          radial-gradient(circle at 48% 76%, rgba(255,255,255,.10) 0 2px, transparent 4px),
+          linear-gradient(135deg, #a2adb6 0%, #7e8b96 52%, #545f6a 100%);
+        border:1px solid #38434e;
+        box-shadow:inset 0 2px 2px rgba(255,255,255,.32), inset 0 -3px 4px rgba(15,20,26,.45),
+                   0 5px 6px rgba(15,9,4,.5); }
+      /* Cellar palette: cold flagstone instead of the warm parchment map —
+         same texture recipe as the field tiles, in dungeon greys. */
+      .cs-theme-cellar .cs-cell {
+        background-image:
+          radial-gradient(140% 100% at 28% 20%, rgba(255,255,255,.12), transparent 55%),
+          radial-gradient(circle at 70% 66%, rgba(50,50,46,.16) 0 8%, transparent 14%),
+          radial-gradient(circle at 26% 80%, rgba(50,50,46,.12) 0 5%, transparent 11%),
+          repeating-linear-gradient(93deg, rgba(70,68,62,.09) 0 3px, transparent 3px 8px),
+          repeating-linear-gradient(4deg, rgba(50,50,46,.06) 0 2px, transparent 2px 9px);
+        background-color:#bdb9af; border-color:#6e6b64; }
+      .cs-theme-cellar .cs-cell-alt { background-color:#b2ada1; }
+      .cs-theme-cellar.cs-iso .cs-cell { box-shadow:inset 0 0 0 1px rgba(90,88,82,.5),
+        inset 0 2px 3px rgba(255,255,255,.14), inset 0 -2px 3px rgba(40,40,36,.22),
+        0 1px 0 rgba(40,40,38,.4); }
       .cs-theme-cellar .cell-wall { background:#7d7a73; border-color:#5a5852; }
       /* Cellar block sides: cold grey stone to match the floor slab. */
       .cs-theme-cellar.cs-iso .cs-riser-s { background:linear-gradient(#6e6b64,#4a4843); }
@@ -1319,6 +1400,33 @@ export class CombatScreen {
       .cs-end-body  { margin:0 0 20px; color:#6e5c42; font-size:14px; }
       #cs-return-btn { padding:10px 24px; background:#6e5230; border:none; border-radius:6px; color:#f0e4c8; cursor:pointer; font-size:14px; }
       #cs-return-btn:hover { background:#5a3a1c; }
+
+      /* ── Mobile: board on top, panels swipe horizontally beneath ──
+         Cells shrink 60→40px so the 8×8 board (and its 45° iso diagonal)
+         fits a ~375px viewport; elevation steps shrink in proportion. */
+      @media (max-width: 700px) {
+        #cs-header { flex-wrap:wrap; gap:8px; padding:6px 10px; font-size:11px; }
+        #cs-body { flex-direction:column; gap:8px; padding:8px; }
+        #cs-grid-wrap { flex:1.5; min-height:0; perspective:950px; }
+        #cs-grid { --base-thick:5px; --elev-step:11px; }
+        .cs-cell { width:40px; height:40px; }
+        .cs-token { width:34px; height:34px; }
+        .cs-token-letter { font-size:12px; }
+        .cs-hp-wrap { width:26px; }
+        .cs-prop-barrel { width:19px; height:25px; }
+        .cs-prop-crate { width:21px; height:20px; }
+        .cs-prop-cover { width:24px; height:15px; }
+        #cs-sidebar { width:100%; flex:1; min-height:150px;
+          flex-direction:row; overflow-x:auto; overflow-y:hidden; gap:8px;
+          -webkit-overflow-scrolling:touch; }
+        #cs-sidebar .cs-panel { min-width:230px; flex-shrink:0; max-height:100%; overflow-y:auto; }
+        /* Actions (2nd in DOM) leads the swipe row — it's what turns need. */
+        #cs-sidebar .cs-panel:nth-child(2) { order:-1; }
+        .cs-panel-log { flex:0 0 auto; }
+        .cs-btn { padding:10px 12px; font-size:13px; }
+        #cs-hint { left:6px; right:6px; bottom:6px; padding:6px 9px; font-size:11px; }
+        .cs-end-card { padding:22px 24px; margin:0 12px; }
+      }
     `;
     document.head.appendChild(s);
   }

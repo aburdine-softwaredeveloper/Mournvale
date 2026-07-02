@@ -33,6 +33,9 @@ import { CharacterCreationScreen } from "./screens/CharacterCreationScreen";
 import { GameScreen } from "./screens/GameScreen";
 import { CombatScreen } from "./screens/CombatScreen";
 import { QuestBoard } from "./components/QuestBoard";
+import { setMusic, isMusicMuted, setMusicMuted } from "./util/music";
+import { isMuted, setMuted } from "./util/audio";
+import { SettingsPanel, AUDIO_CHANGE_EVENT } from "./components/SettingsPanel";
 import { InventoryPanel } from "./components/InventoryPanel";
 import { ShopPanel } from "./components/ShopPanel";
 import { InvitePrompt } from "./components/InvitePrompt";
@@ -79,6 +82,7 @@ class MournvaleClient {
   private readonly inventoryPanel = new InventoryPanel();
   private readonly shopPanel = new ShopPanel();
   private readonly invitePrompt = new InvitePrompt();
+  private readonly settingsPanel = new SettingsPanel();
 
   /** Buffers character draft locally for the final character_create send */
   private draft: Record<string, string> = {};
@@ -118,6 +122,12 @@ class MournvaleClient {
 
     this.connect();
     this.buildCombatContainer();
+    this.buildSoundToggle();
+
+    // The sleepy-dread town theme underscores everything outside combat.
+    // Safe to request now: the music engine idles until the AudioContext
+    // is unlocked by the player's first click/keypress.
+    setMusic("town");
 
     // Wire the menu's New Game / Load Game / Delete handlers
     this.menu.setHandlers({
@@ -211,6 +221,36 @@ class MournvaleClient {
 
   private hideCombatOverlay(): void {
     if (this.combatContainer) this.combatContainer.style.display = "none";
+  }
+
+  /**
+   * A small always-available master sound toggle (fixed, bottom-right).
+   * It sits above the combat overlay so audio can be silenced mid-fight,
+   * and it mutes/unmutes music AND sound effects together. Fine-grained
+   * control lives in the ⚙ Settings panel; this button stays in sync
+   * with it via the AUDIO_CHANGE_EVENT.
+   */
+  private buildSoundToggle(): void {
+    const btn = document.createElement("button");
+    btn.id = "sound-toggle";
+    btn.type = "button";
+    const paint = (): void => {
+      const allOff = isMuted() && isMusicMuted();
+      btn.textContent = allOff ? "♪ ✕" : "♪";
+      btn.classList.toggle("muted", allOff);
+      btn.title = allOff ? "Sound off — click to unmute" : "Sound on — click to mute all";
+      btn.setAttribute("aria-label", btn.title);
+    };
+    paint();
+    btn.addEventListener("click", () => {
+      // If anything is audible, silence everything; else restore everything.
+      const mute = !(isMuted() && isMusicMuted());
+      setMuted(mute);
+      setMusicMuted(mute);
+      paint();
+    });
+    window.addEventListener(AUDIO_CHANGE_EVENT, paint);
+    document.body.appendChild(btn);
   }
 
   // ─────────────────────────────────────────────
@@ -433,6 +473,7 @@ class MournvaleClient {
       // ── Phase 3: Combat messages ───────────────────────────────────────────
       case "combat_start": {
         this.activeCombatId = msg.payload.id;
+        setMusic("combat"); // danger theme for the duration of the fight
         this.combatScreen   = new CombatScreen(
           this.combatContainer!,
           this.playerId,
@@ -452,6 +493,7 @@ class MournvaleClient {
             this.combatScreen   = null;
             this.activeCombatId = null;
             this.hideCombatOverlay();
+            setMusic("town"); // back to the sleepy dread
           }
         );
         this.combatScreen.mount();
@@ -535,6 +577,12 @@ class MournvaleClient {
     const arg = rest.join(" ").trim();
 
     switch (verb?.toLowerCase()) {
+      case "settings":
+      case "options":
+        // Pure client preference panel — never touches the server.
+        this.settingsPanel.show();
+        return;
+
       case "leave":
         this.send({ type: "party_leave", payload: {} });
         return;
