@@ -21,6 +21,7 @@
 import { WebSocketServer, WebSocket, RawData } from "ws";
 import { createServer } from "http";
 import * as path from "path";
+import * as os from "os";
 import { randomUUID } from "crypto";
 import { createStaticHandler } from "./httpStatic";
 import { handleCommand } from "./commands";
@@ -134,11 +135,41 @@ const SPEAK_INTENT_VERBS: Record<string, TalkIntent> = {
  */
 const playerSockets = new Map<string, WebSocket>();
 
+/** Every non-internal IPv4 address this machine has — the URLs LAN players use. */
+function lanUrls(port: number): string[] {
+  const urls: string[] = [];
+  for (const ifaces of Object.values(os.networkInterfaces())) {
+    for (const iface of ifaces ?? []) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        urls.push(`http://${iface.address}:${port}`);
+      }
+    }
+  }
+  return urls;
+}
+
+// A friendly diagnosis instead of a raw stack trace when the port is taken —
+// the usual cause is the always-on PM2 server already holding it.
+httpServer.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`✖ Port ${PORT} is already in use — another Mournvale server is likely running.`);
+    console.error(`  If it's the always-on PM2 server, that's normal: dev uses port 3001 (npm run dev).`);
+    console.error(`  Check with:  pm2 status   ·   lsof -nP -iTCP:${PORT} -sTCP:LISTEN`);
+    console.error(`  Or run this instance on another port:  PORT=${PORT + 1} npm start`);
+    process.exit(1);
+  }
+  throw err;
+});
+
 // Bind all interfaces (0.0.0.0) so the server is reachable from other machines
 // — LAN, a tunnel, or a cloud host — not just localhost.
 httpServer.listen(PORT, () => {
   console.log(`🏰 Mournvale listening on http://localhost:${PORT}`);
-  console.log(`   Players reach it at http://<this-host>:${PORT} (LAN IP, tunnel, or your domain).`);
+  const urls = lanUrls(PORT);
+  if (urls.length > 0) {
+    console.log(`   Players on your network join at: ${urls.join("  or  ")}`);
+  }
+  console.log(`   (For play beyond the LAN, use a tunnel or domain pointed at this host.)`);
 });
 
 // ─────────────────────────────────────────────
@@ -149,6 +180,20 @@ httpServer.listen(PORT, () => {
 function emitToPlayer(playerId: string, msg: ServerMessage): void {
   const socket = playerSockets.get(playerId);
   if (socket) sendToPlayer(socket, msg);
+}
+
+/**
+ * Re-sends the room snapshot to everyone standing in `roomId` (optionally
+ * excluding one session id). Call after any presence change — a player moving,
+ * entering the world, or disconnecting — so the "Here:" panel every occupant
+ * sees stays live, not just the mover's.
+ */
+function refreshRoomOccupants(roomId: string | undefined, excludeSessionId?: string): void {
+  if (!roomId) return;
+  for (const p of getActivePlayersInRoom(roomId)) {
+    if (p.id === excludeSessionId) continue;
+    sendRoomUpdate(p, p.socket);
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -244,6 +289,13 @@ server.on("connection", (socket: WebSocket) => {
       }, currentPlayer.id);
     }
 
+    // A solo player's active quest would otherwise be orphaned forever under
+    // their session id — hand it back to the board so others can take it.
+    // (Party quests are handled by the disband path below.)
+    if (!partyManager.getPartyId(currentPlayer.id)) {
+      questManager.abandon(currentPlayer.id);
+    }
+
     const partyIdBefore = partyManager.getPartyId(currentPlayer.id);
     const partyResult   = partyManager.handleDisconnect(currentPlayer.id);
 
@@ -251,6 +303,12 @@ server.on("connection", (socket: WebSocket) => {
     if (currentPlayer.playerId) playerSockets.delete(currentPlayer.playerId);
     npcChat.clearHistory(currentPlayer.id);
     players.delete(socket);
+
+    // Now that they're gone from the map, update the "Here:" panel of
+    // everyone still standing in the room they left.
+    if (currentPlayer.state === "active") {
+      refreshRoomOccupants(currentPlayer.roomId);
+    }
 
     if (partyResult.disbanded) {
       if (partyIdBefore) questManager.abandon(partyIdBefore);
@@ -352,6 +410,7 @@ async function handleMenuMessage(
         type: "player_presence",
         payload: { playerName: data.character.name, event: "entered" },
       }, player.id);
+      refreshRoomOccupants(player.roomId, player.id);
       sendToPlayer(socket, { type: "system", payload: { message: `Welcome back, ${data.character.name}.` } });
       console.log(`[load] ${data.character.name} loaded from slot ${slot} into ${player.roomId}.`);
       return;
@@ -448,6 +507,7 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
         type: "player_presence",
         payload: { playerName: character.name, event: "entered" },
       }, player.id);
+      refreshRoomOccupants("tavern", player.id);
       sendToPlayer(socket, {
         type: "dialogue",
         payload: {
@@ -498,12 +558,19 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
       // `shop`/`trade`/`buy`/`sell` opens the room's vendor stall, if one's here.
       if (handleShopCommand(player, socket, msg.payload.input)) return;
 
+      const roomBefore = player.roomId;
       const response = handleCommand(player.id, msg.payload.input);
       if (response) sendToPlayer(socket, { type: "system", payload: { message: response } });
       if (["north", "south", "east", "west", "up", "down"].includes(
         msg.payload.input.trim().split(" ")[0]?.toLowerCase() ?? ""
       )) {
         sendRoomUpdate(player, socket);
+        // Keep everyone else's "Here:" panel live: the room left behind and
+        // the room entered both changed occupants.
+        if (player.roomId !== roomBefore) {
+          refreshRoomOccupants(roomBefore, player.id);
+          refreshRoomOccupants(player.roomId, player.id);
+        }
         // Entering a room may satisfy a non-combat quest's field objective.
         maybeAdvanceFieldQuest(player);
         // A player moving is the town's heartbeat: advance gossip one hop so
@@ -523,6 +590,10 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
 
     case "party_leave":
       handlePartyLeave(player, socket);
+      return;
+
+    case "party_member_sheet_request":
+      handlePartyMemberSheetRequest(player, socket, msg.payload.memberId);
       return;
 
     case "quest_board_request":
@@ -700,6 +771,10 @@ function handleFightCommand(player: Player, socket: WebSocket, input: string): b
   }
   if (worldManager.getHostileNpcsInRoom(player.roomId).length === 0) {
     sendToPlayer(socket, { type: "system", payload: { message: "There's nothing here to fight." } });
+    return true;
+  }
+  if (combatManager.hasCombatInRoom(player.roomId)) {
+    sendToPlayer(socket, { type: "system", payload: { message: "The fight here is already underway." } });
     return true;
   }
 
@@ -946,17 +1021,68 @@ function runNpcChat(
 }
 
 /**
+ * When a fight breaks out, every online party member of anyone standing in the
+ * room is pulled to the room first — a party fights together, wherever its
+ * members happened to be standing. Each summoned member is moved with full
+ * presence bookkeeping (their old room hears them leave, the fight room hears
+ * them arrive, both rooms' "Here:" panels refresh).
+ */
+function pullPartyMembersIntoRoom(roomId: string): void {
+  const alreadyHere = new Set(getActivePlayersInRoom(roomId).map((p) => p.id));
+
+  for (const inRoomId of [...alreadyHere]) {
+    for (const memberId of partyManager.getPartyMemberIds(inRoomId)) {
+      if (alreadyHere.has(memberId)) continue;
+      const member = getPlayerById(memberId);
+      if (!member || member.state !== "active" || !member.playerId || !member.roomId) continue;
+      // Never yank someone out of a fight they're already in elsewhere.
+      if (combatManager.isPlayerInCombat(member.playerId)) continue;
+
+      const fromRoomId = member.roomId;
+      broadcastToRoom(fromRoomId, {
+        type: "player_presence",
+        payload: { playerName: getDisplayName(member), event: "left" },
+      }, member.id);
+
+      member.roomId = roomId;
+      alreadyHere.add(member.id);
+
+      sendToPlayer(member.socket, {
+        type: "system",
+        payload: { message: `Steel rings out — your party is under attack! You rush to ${rooms[roomId]?.name ?? "their side"}.` },
+      });
+      sendRoomUpdate(member, member.socket);
+      broadcastToRoom(roomId, {
+        type: "player_presence",
+        payload: { playerName: getDisplayName(member), event: "entered" },
+      }, member.id);
+      refreshRoomOccupants(fromRoomId, member.id);
+    }
+  }
+}
+
+/**
  * Call this when players enter a room containing hostile NPCs.
- * Places all players in the room and the hostile NPCs on the grid,
- * then sends a personalised combat_start to every player.
+ * Pulls in the room players' party members (a party fights as one), places
+ * all players and the hostile NPCs on the grid, then sends a personalised
+ * combat_start to every player.
  */
 export function triggerCombat(roomId: string): void {
+  const hostileNpcs = worldManager.getHostileNpcsInRoom(roomId);
+  if (!hostileNpcs.length) return;
+
+  // Never stack a second combat onto a room mid-fight — the same NPCs would
+  // be fought (and looted) twice in parallel.
+  if (combatManager.hasCombatInRoom(roomId)) return;
+
+  // One member starting a fight commits the whole party to it.
+  pullPartyMembersIntoRoom(roomId);
+
   // Only players with a persistent identity can take part — combat entities,
   // socket delivery (emitToPlayer), and the client's "my entity" check all key
   // off Player.playerId, so it must be the id stamped on each entity.
   const playersInRoom = getActivePlayersInRoom(roomId).filter((p) => p.playerId);
-  const hostileNpcs   = worldManager.getHostileNpcsInRoom(roomId);
-  if (!playersInRoom.length || !hostileNpcs.length) return;
+  if (!playersInRoom.length) return;
 
   // Place players along the bottom rows, enemies along the top rows
   const playerEntities = playersInRoom.map((p, i) =>
@@ -1069,9 +1195,12 @@ function handleCombatSubmitAction(
         .map(e => e.playerId!)
     );
 
-    // On a win, the defeated hostiles leave the room for good (this session).
+    // On a win, the defeated hostiles leave the room — and respawn later, so
+    // the encounter (and any quest built on it) stays available to everyone
+    // on a long-running server.
     if (outcome === "players_win") {
       worldManager.clearHostiles(state.roomId);
+      scheduleHostileRespawn(state.roomId);
     }
 
     for (const pid of playersInCombat) {
@@ -1115,6 +1244,33 @@ function handleCombatSubmitAction(
       payload: { combatId, round: nextState.round, state: view, pendingPlayerIds: nextPending },
     });
   }
+}
+
+/** How long a cleared room stays quiet before its hostiles return. */
+const HOSTILE_RESPAWN_MS = 3 * 60 * 1000;
+
+/** Rooms with a respawn already ticking (dedup so wins don't stack timers). */
+const pendingRespawns = new Set<string>();
+
+/**
+ * Brings a cleared room's hostiles back after HOSTILE_RESPAWN_MS, warning
+ * anyone standing there and refreshing their "Here:" panel. Keeps combat
+ * encounters — and the quests built on them — repeatable on a shared server.
+ */
+function scheduleHostileRespawn(roomId: string): void {
+  if (pendingRespawns.has(roomId)) return;
+  pendingRespawns.add(roomId);
+  setTimeout(() => {
+    pendingRespawns.delete(roomId);
+    const returned = worldManager.respawnHostiles(roomId);
+    if (returned.length === 0) return;
+    broadcastToRoom(roomId, {
+      type: "system",
+      payload: { message: "Something stirs in the dark — danger has crept back into this place." },
+    });
+    refreshRoomOccupants(roomId);
+    console.log(`[world] Respawned ${returned.length} hostile(s) in ${roomId}.`);
+  }, HOSTILE_RESPAWN_MS);
 }
 
 /**
@@ -1773,6 +1929,32 @@ function handlePartyLeave(player: Player, socket: WebSocket): void {
   } else {
     refreshPartyFor(result.stillInParty);
   }
+}
+
+/**
+ * Sends a fellow party member's character sheet, view-only. Guarded: you can
+ * only inspect someone in YOUR party (the sheet reuses the same server-built
+ * SkillScreenView the skills screen uses, so nothing here can drift).
+ */
+function handlePartyMemberSheetRequest(player: Player, socket: WebSocket, memberId: string): void {
+  const memberIds = partyManager.getPartyMemberIds(player.id);
+  if (!memberIds.includes(memberId)) {
+    sendToPlayer(socket, { type: "system", payload: { message: "They're not in your party." } });
+    return;
+  }
+  const member = getPlayerById(memberId);
+  if (!member || !member.character || !member.progression) {
+    sendToPlayer(socket, { type: "system", payload: { message: "That party member isn't available right now." } });
+    return;
+  }
+  const gearSummary = buildInventoryView(member.inventory ?? newInventory()).bonusSummary;
+  sendToPlayer(socket, {
+    type: "party_member_sheet",
+    payload: {
+      sheet: buildSkillScreenView(member.character, member.progression),
+      gearSummary,
+    },
+  });
 }
 
 // ─────────────────────────────────────────────

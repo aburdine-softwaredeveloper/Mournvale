@@ -168,6 +168,10 @@ export class GameScreen {
     this.partyPanel.setInviteHandler(handler);
   }
 
+  public setPartyMemberViewHandler(handler: (playerId: string) => void): void {
+    this.partyPanel.setMemberViewHandler(handler);
+  }
+
   public updateParty(party: PartyView | null): void {
     this.partyPanel.update(party);
   }
@@ -230,11 +234,7 @@ export class GameScreen {
   }
 
   public updateRoom(msg: RoomMessage): void {
-    const { name, description, exits, npcs, artKey } = msg.payload;
-
-    // NOTE: msg.payload.players is intentionally unused here.
-    // Party member presence is managed exclusively via updateParty().
-    // Only NPCs appear in the Here: section.
+    const { name, description, exits, npcs, players, artKey } = msg.payload;
 
     this.roomName.textContent  = name;
     this.roomDesc.textContent  = description;
@@ -242,7 +242,7 @@ export class GameScreen {
 
     this.updateContextualCommands(exits, npcs);
     this.expandedNpcId = null;
-    this.renderNpcs(npcs);
+    this.renderHere(npcs, players);
     this.updateRoomImage(artKey);
 
     // Leaving a room ends any in-progress conversation portraits.
@@ -334,19 +334,39 @@ export class GameScreen {
   // ─────────────────────────────────────────────
 
   /**
-   * Renders the Here: section with NPCs only.
-   * Shows "No one is here." when the list is empty.
-   * Party members are never rendered here.
+   * Renders the Here: section — the room's NPCs plus every other player
+   * standing in the room. The server re-sends the room snapshot to all
+   * occupants whenever someone enters or leaves, so this list stays live.
+   * Shows "No one is here." when both lists are empty.
    */
-  private renderNpcs(npcs: NpcView[]): void {
+  private renderHere(npcs: NpcView[], playerNames: string[]): void {
     this.roomNpcs.innerHTML = "";
 
-    if (npcs.length === 0) {
+    if (npcs.length === 0 && playerNames.length === 0) {
       const empty = document.createElement("span");
       empty.className   = "room-npcs-empty";
       empty.textContent = "No one is here.";
       this.roomNpcs.appendChild(empty);
       return;
+    }
+
+    // Fellow players first — simple presence rows (no intent buttons).
+    for (const playerName of playerNames) {
+      const row = document.createElement("div");
+      row.className = "npc-row here-player-row";
+      row.title     = `${playerName} is here`;
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className   = "npc-name";
+      nameSpan.textContent = playerName;
+
+      const tag = document.createElement("span");
+      tag.className   = "npc-role-tag here-player-tag";
+      tag.textContent = "traveler";
+
+      row.appendChild(nameSpan);
+      row.appendChild(tag);
+      this.roomNpcs.appendChild(row);
     }
 
     for (const npc of npcs) {

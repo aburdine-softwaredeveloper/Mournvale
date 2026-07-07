@@ -44,6 +44,9 @@ export class PartyPanel {
   /** Callback fired with the target name when an invite is submitted. */
   private onInvite: ((name: string) => void) | null = null;
 
+  /** Callback fired with a member's playerId when their card is clicked. */
+  private onMemberView: ((playerId: string) => void) | null = null;
+
   constructor() {
     this.root = this.requireEl("party-panel-container");
     // Solo players still see the INVITE control beneath ◆ PARTY.
@@ -62,6 +65,11 @@ export class PartyPanel {
   /** Registers the handler invoked when an invite name is submitted. */
   public setInviteHandler(handler: (name: string) => void): void {
     this.onInvite = handler;
+  }
+
+  /** Registers the handler invoked when a member card is clicked (view sheet). */
+  public setMemberViewHandler(handler: (playerId: string) => void): void {
+    this.onMemberView = handler;
   }
 
   /**
@@ -93,7 +101,10 @@ export class PartyPanel {
 
   private buildMemberCard(member: PartyMemberView): HTMLElement {
     const card = document.createElement("div");
-    card.className = "party-member-card";
+    card.className = "party-member-card party-member-clickable";
+    card.title = `View ${member.name}'s character sheet`;
+    // Clicking a companion opens their character sheet (read-only).
+    card.addEventListener("click", () => this.onMemberView?.(member.playerId));
 
     const header = document.createElement("div");
     header.className = "party-member-header";

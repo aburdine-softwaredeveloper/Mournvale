@@ -7,9 +7,10 @@
  *
  * Self-contained like InventoryPanel: builds its own DOM + styles and
  * appends to <body>. Talks straight to the audio/music modules — no
- * server round-trip, these are pure client preferences. Whenever a
- * toggle changes it dispatches "mournvale:audiochange" on window so
- * other audio UI (the floating ♪ button) can repaint.
+ * server round-trip, these are pure client preferences. This panel is
+ * the ONLY audio UI (the old floating ♪ button was removed so it can't
+ * cover other elements); toggles still announce "mournvale:audiochange"
+ * for any future audio UI to sync on.
  */
 
 import { isMuted, setMuted, playSelect } from "../util/audio";

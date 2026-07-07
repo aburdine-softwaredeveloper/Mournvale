@@ -1086,7 +1086,8 @@ html, body {
 .dlg-portrait-name {
   font-size: 7px;
   letter-spacing: 1px;
-  color: var(--color-text-gold);
+  /* Cream page-tone on the dark leather plaque — readable over any room art. */
+  color: var(--page-base);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   padding: 2px 5px;
@@ -1418,32 +1419,6 @@ html, body {
   margin-bottom: 10px;
 }
 
-/* ── Global sound toggle ── */
-
-#sound-toggle {
-  position: fixed;
-  right: 14px;
-  bottom: 14px;
-  /* above the combat overlay (z 100) so music can be muted mid-fight */
-  z-index: 300;
-  min-width: 42px;
-  height: 42px;
-  padding: 0 10px;
-  border-radius: 50%;
-  background: rgba(30, 24, 17, 0.85);
-  border: 1px solid #8a6a38;
-  color: #d8b878;
-  font-family: var(--font-pixel);
-  font-size: 13px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-#sound-toggle.muted {
-  color: #6e5c42;
-  border-color: #4a3b28;
-}
-
 .overlay-header .snes-btn {
   padding: 4px 8px;
   font-size: 8px;
@@ -1613,17 +1588,6 @@ html, body {
   #menu-subtitle { font-size: 13px; }
   .cover-btn { font-size: 15px; }
   #book-page { padding: 18px 14px 14px; }
-
-  /* Sound toggle moves to the top-right corner (the header is left-
-     aligned) so it can't sit on the SEND button. */
-  #sound-toggle {
-    top: 8px;
-    right: 8px;
-    bottom: auto;
-    min-width: 36px;
-    height: 36px;
-    font-size: 11px;
-  }
 }
 
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1681,6 +1645,10 @@ html, body {
 .npc-role-questgiver { color: var(--color-text-gold); border-color: var(--color-border-gold); }
 .npc-role-vendor     { color: var(--color-text-system); }
 .npc-role-hostile    { color: var(--color-text-error); border-color: var(--color-text-error); }
+
+/* Fellow players listed under Here: — presence rows, no intent buttons. */
+.here-player-row { cursor: default; }
+.here-player-tag { color: var(--color-text-presence); border-color: var(--color-text-presence); }
 
 .npc-intent-group {
   display: flex;
@@ -1757,6 +1725,15 @@ html, body {
 
 .party-member-card:last-child {
   margin-bottom: 0;
+}
+
+/* Member cards open that companion's read-only character sheet on click. */
+.party-member-clickable {
+  cursor: pointer;
+}
+.party-member-clickable:hover {
+  border-color: var(--color-border-gold);
+  background: var(--color-bg-panel);
 }
 
 .party-member-header {

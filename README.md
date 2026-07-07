@@ -9,8 +9,12 @@ snapshots to clients over WebSocket. The **client is vanilla TypeScript + DOM**
 
 ```bash
 npm install
-npm run dev        # runs server (:3000) + client (Vite) together
+npm run dev        # runs server (:3001) + client (Vite) together
 ```
+
+Dev deliberately uses port **3001** so it never collides with the always-on
+PM2/production server holding **3000** on the same machine — both can run at
+once.
 
 Then open the Vite URL. Other scripts:
 

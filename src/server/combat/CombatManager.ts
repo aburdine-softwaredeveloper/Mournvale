@@ -431,6 +431,29 @@ export function buildPlayerCombatEntity(params: {
 export class CombatManager {
   private readonly combats = new Map<string, CombatState>();
 
+  /**
+   * True when a live combat is already running in this room. endCombat()
+   * removes finished fights from the map, so presence == live. Guards against
+   * a second `fight` command spawning a parallel combat over the same NPCs
+   * (which would double XP/loot and desync the room).
+   */
+  hasCombatInRoom(roomId: string): boolean {
+    for (const c of this.combats.values()) {
+      if (c.roomId === roomId) return true;
+    }
+    return false;
+  }
+
+  /** True when this persistent player id is fighting in any live combat. */
+  isPlayerInCombat(playerId: string): boolean {
+    for (const c of this.combats.values()) {
+      if (c.entities.some(e => e.type === "player" && e.playerId === playerId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   createCombat(

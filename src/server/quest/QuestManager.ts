@@ -6,6 +6,16 @@
  * rules: a "party" quest requires being in a party; "solo" requires not
  * being in one; "either" is always allowed.
  *
+ * Availability model:
+ *   • AUTHORED quests are PER-OWNER. Every player (or party) sees the full
+ *     authored campaign minus what THEY have active or already completed.
+ *     One player taking or finishing "Cellar Vermin" never removes it from
+ *     anyone else's board — this is what keeps the game fully playable for
+ *     a new character on a long-running server.
+ *   • GENERATED quests are shared odd jobs: first-come first-served while
+ *     active, and replaced with a fresh one when completed, so the board
+ *     never drains.
+ *
  * Architecture: Pure state + logic, like PartyManager. The caller does
  * socket sends. Quest acceptance is tracked per accepting unit — a solo
  * player by their id, a party by its party id — so party members share
@@ -13,20 +23,23 @@
  */
 
 import type { Quest, ActiveQuest, QuestBoardView } from "../../types/quest";
-import { AUTHORED_QUESTS, generateQuests } from "./questData";
+import { AUTHORED_QUESTS, generateQuests, generateQuest } from "./questData";
 
 /** How many random quests to keep on the board alongside authored ones */
 const RANDOM_QUEST_COUNT = 2;
 
 export class QuestManager {
-  /** All quests currently on the board, keyed by id */
-  private board = new Map<string, Quest>();
+  /** Generated (shared, claimable) quests currently on the board, keyed by id. */
+  private generatedBoard = new Map<string, Quest>();
 
   /**
    * Active quests keyed by "owner" — either a solo player id or a party
    * id. Party members look up by their party id so they share a quest.
    */
   private activeByOwner = new Map<string, ActiveQuest>();
+
+  /** Authored quest ids each owner has finished (per-owner replay protection). */
+  private completedByOwner = new Map<string, Set<string>>();
 
   constructor() {
     this.refreshBoard();
@@ -36,24 +49,27 @@ export class QuestManager {
   // BOARD
   // ─────────────────────────────────────────────
 
-  /** Rebuilds the board: all authored quests + fresh random ones. */
+  /** Rebuilds the generated jobs (authored quests are constant, per-owner). */
   public refreshBoard(): void {
-    this.board.clear();
-    for (const q of AUTHORED_QUESTS) {
-      this.board.set(q.id, q);
-    }
+    this.generatedBoard.clear();
     for (const q of generateQuests(RANDOM_QUEST_COUNT)) {
-      this.board.set(q.id, q);
+      this.generatedBoard.set(q.id, q);
     }
   }
 
   /**
    * Builds the board view for a given owner key (solo player id or party
-   * id). Shows all available quests and the owner's active quest, if any.
+   * id): every authored quest this owner hasn't done or taken, the shared
+   * generated jobs, and the owner's active quest, if any.
    */
   public buildView(ownerKey: string): QuestBoardView {
+    const done = this.completedByOwner.get(ownerKey);
+    const activeId = this.activeByOwner.get(ownerKey)?.quest.id;
+    const authored = AUTHORED_QUESTS.filter(
+      (q) => q.id !== activeId && !done?.has(q.id)
+    );
     return {
-      available: [...this.board.values()],
+      available: [...authored, ...this.generatedBoard.values()],
       active: this.activeByOwner.get(ownerKey) ?? null,
     };
   }
@@ -81,7 +97,16 @@ export class QuestManager {
       return "You already have an active quest. Abandon it first.";
     }
 
-    const quest = this.board.get(questId);
+    const authored = AUTHORED_QUESTS.find((q) => q.id === questId);
+    let quest: Quest | undefined;
+    if (authored) {
+      if (this.completedByOwner.get(ownerKey)?.has(questId)) {
+        return "You've already seen that job through.";
+      }
+      quest = authored;
+    } else {
+      quest = this.generatedBoard.get(questId);
+    }
     if (!quest) return "That quest is no longer on the board.";
 
     // Enforce participation rules
@@ -100,14 +125,16 @@ export class QuestManager {
 
     this.activeByOwner.set(ownerKey, active);
 
-    // Remove from the board so it can't be double-taken
-    this.board.delete(questId);
+    // Generated jobs are first-come first-served; authored quests stay
+    // available to every OTHER owner (buildView hides this owner's active one).
+    this.generatedBoard.delete(questId);
 
     return null;
   }
 
   /**
-   * Abandons the owner's active quest, returning it to the board.
+   * Abandons the owner's active quest. Generated jobs return to the shared
+   * board; authored quests simply reappear on the owner's next board view.
    * Returns an error if there's nothing to abandon.
    */
   public abandon(ownerKey: string): string | null {
@@ -115,8 +142,9 @@ export class QuestManager {
     if (!active) return "You have no active quest to abandon.";
 
     this.activeByOwner.delete(ownerKey);
-    // Return it to the board (authored quests reappear; generated ones too)
-    this.board.set(active.quest.id, active.quest);
+    if (active.quest.generated) {
+      this.generatedBoard.set(active.quest.id, active.quest);
+    }
 
     return null;
   }
@@ -141,30 +169,43 @@ export class QuestManager {
   }
 
   /**
-   * Completes the owner's active quest. Unlike abandon(), the quest is NOT
-   * returned to the board — it's done. Returns the completed ActiveQuest (so
-   * the caller can grant its reward), or null if the owner had no active quest.
+   * Completes the owner's active quest and returns it (so the caller can grant
+   * its reward), or null if the owner had no active quest. Authored quests are
+   * remembered as done for THIS owner only; a completed generated job is
+   * replaced with a fresh one so the shared board never drains.
    */
   public complete(ownerKey: string): ActiveQuest | null {
     const active = this.activeByOwner.get(ownerKey);
     if (!active) return null;
     this.activeByOwner.delete(ownerKey);
+
+    if (active.quest.generated) {
+      const replacement = generateQuest();
+      this.generatedBoard.set(replacement.id, replacement);
+    } else {
+      const done = this.completedByOwner.get(ownerKey) ?? new Set<string>();
+      done.add(active.quest.id);
+      this.completedByOwner.set(ownerKey, done);
+    }
+
     return active;
   }
 
   /**
    * Migrates a solo player's active quest to a party owner key, used when
    * a player who holds a quest joins/forms a party. If both already have
-   * quests, the solo one is dropped back to the board to avoid conflict.
+   * quests, the solo one is dropped (generated jobs go back to the board).
    */
   public transferOwner(fromKey: string, toKey: string): void {
     const active = this.activeByOwner.get(fromKey);
     if (!active) return;
 
     if (this.activeByOwner.has(toKey)) {
-      // Target already has a quest — return the solo one to the board
+      // Target already has a quest — release the solo one
       this.activeByOwner.delete(fromKey);
-      this.board.set(active.quest.id, active.quest);
+      if (active.quest.generated) {
+        this.generatedBoard.set(active.quest.id, active.quest);
+      }
       return;
     }
 

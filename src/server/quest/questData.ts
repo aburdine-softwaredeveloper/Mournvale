@@ -187,38 +187,91 @@ export const AUTHORED_QUESTS: Quest[] = [
 // RANDOM QUEST GENERATION
 // ─────────────────────────────────────────────
 
-const GEN_TEMPLATES: {
+/**
+ * Every generated quest is bound to a REAL room and a completable objective —
+ * no more jobs pointing at places that don't exist ("the fog market", "the
+ * drowned crypt"). Field kinds auto-complete: gather/scout/investigate finish
+ * on `look` in the objective room (they carry no turnInNpcId), deliver finishes
+ * on arrival. So a generated quest never depends on NPC wiring it doesn't have.
+ */
+interface GenPlace {
+  roomId: string;
+  /** How the place reads in quest prose ("the Old Graveyard"). */
+  label: string;
+}
+
+const GEN_PLACES: GenPlace[] = [
+  { roomId: "market_square",      label: "Market Square" },
+  { roomId: "graveyard",          label: "the Old Graveyard" },
+  { roomId: "stables",            label: "the Stables" },
+  { roomId: "smithy",             label: "the Iron Hearth" },
+  { roomId: "general_store",      label: "Welk's Sundries" },
+  { roomId: "guard_post",         label: "the Guard Post" },
+  { roomId: "south_road",         label: "the South Road" },
+  { roomId: "north_gate",         label: "the North Gate" },
+  { roomId: "apothecary",         label: "the Greenglass Apothecary" },
+  { roomId: "cobblestone_street", label: "Cobblestone Street" },
+];
+
+interface GenTemplate {
   title: string;
   description: string;
   participation: QuestParticipation;
-}[] = [
-  {
-    title: "Bounty: {target}",
-    description: "A {target} has been menacing the {place}. Put it down and bring proof.",
-    participation: "either",
-  },
+  objectiveKind: NonNullable<Quest["objectiveKind"]>;
+  lookClue: string;
+}
+
+const GEN_TEMPLATES: GenTemplate[] = [
   {
     title: "Lost {item}",
-    description: "Someone dropped a {item} near the {place}. Recover it and return it for a reward.",
+    description:
+      "Someone dropped a {item} near {place}. Search the spot (look around " +
+      "when you get there) and it's yours to claim the reward on.",
     participation: "solo",
+    objectiveKind: "gather",
+    lookClue:
+      "There — half-hidden in the muck, the {item}. You pocket it. That was " +
+      "easier than honest work.",
   },
   {
-    title: "Escort to {place}",
-    description: "A nervous traveler needs safe passage to the {place}. Keep them alive.",
-    participation: "party",
-  },
-  {
-    title: "Clear the {place}",
-    description: "The {place} is thick with {target}s. Make it safe again.",
+    title: "Eyes on {place}",
+    description:
+      "Folk report strange movement around {place} after dark. Go take a " +
+      "careful look and note anything amiss.",
     participation: "either",
+    objectiveKind: "scout",
+    lookClue:
+      "You watch {place} from the shadows until your legs cramp. Whatever " +
+      "was moving here has moved on — but you've seen enough to earn your coin.",
+  },
+  {
+    title: "Trouble at {place}",
+    description:
+      "Something's been wrong at {place} for days — noises, small thefts, a " +
+      "bad feeling. Look the place over and get to the bottom of it.",
+    participation: "either",
+    objectiveKind: "investigate",
+    lookClue:
+      "You turn {place} over corner by corner and find the cause: fog-damp " +
+      "rot and a nest of vermin, already abandoned. Nothing a stiff broom " +
+      "won't cure. Mystery solved.",
+  },
+  {
+    title: "Delivery to {place}",
+    description:
+      "A sealed parcel needs carrying to {place} before nightfall. No " +
+      "questions, no peeking.",
+    participation: "solo",
+    objectiveKind: "deliver",
+    lookClue: "", // deliver completes on arrival; no look step
   },
 ];
 
-const TARGETS = ["wraith", "fog-wolf", "bandit", "ghoul", "shade", "mire-beast"];
-const PLACES = ["old mill", "drowned crypt", "north road", "ruined chapel", "fog market", "broken bridge"];
 const ITEMS = ["signet ring", "iron locket", "sealed letter", "silver dagger", "music box"];
 const GIVERS = ["Aldric the Barkeep", "Captain Vey", "Old Hollis", "a hooded stranger", "the town notice board"];
 
+/** Generated jobs are odd jobs, not campaigns — keep them in the low tiers. */
+const GEN_DIFFICULTIES: QuestDifficulty[] = ["Trivial", "Easy", "Moderate"];
 const DIFFICULTIES: QuestDifficulty[] = ["Trivial", "Easy", "Moderate", "Hard", "Perilous"];
 
 function pick<T>(arr: T[]): T {
@@ -226,11 +279,8 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]!;
 }
 
-function fill(template: string, target: string, place: string, item: string): string {
-  return template
-    .replace(/\{target\}/g, target)
-    .replace(/\{place\}/g, place)
-    .replace(/\{item\}/g, item);
+function fill(template: string, place: string, item: string): string {
+  return template.replace(/\{place\}/g, place).replace(/\{item\}/g, item);
 }
 
 /** Rewards scale with difficulty tier. */
@@ -252,26 +302,29 @@ function recommendedForParticipation(
 }
 
 /**
- * Generates a single random quest from the templates.
+ * Generates a single random quest from the templates. Always playable:
+ * the objective room exists and the objective kind auto-completes.
  */
 export function generateQuest(): Quest {
   const template = pick(GEN_TEMPLATES);
-  const target = pick(TARGETS);
-  const place = pick(PLACES);
+  const place = pick(GEN_PLACES);
   const item = pick(ITEMS);
-  const difficulty = pick(DIFFICULTIES);
+  const difficulty = pick(GEN_DIFFICULTIES);
   const reward = rewardForDifficulty(difficulty);
 
   return {
     id: `gen-${randomUUID()}`,
-    title: fill(template.title, target, place, item),
-    description: fill(template.description, target, place, item),
+    title: fill(template.title, place.label, item),
+    description: fill(template.description, place.label, item),
     giver: pick(GIVERS),
     difficulty,
     participation: template.participation,
     reward,
     recommendedSize: recommendedForParticipation(template.participation, difficulty),
     generated: true,
+    objectiveRoomId: place.roomId,
+    objectiveKind: template.objectiveKind,
+    ...(template.lookClue ? { lookClue: fill(template.lookClue, place.label, item) } : {}),
   };
 }
 

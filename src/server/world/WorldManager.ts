@@ -39,6 +39,8 @@ export interface TalkResult {
 class WorldManager {
   private readonly byId:   Map<string, NPC>;
   private readonly byRoom: Map<string, NPC[]>;
+  /** Hostiles defeated per room, held so they can respawn later. */
+  private readonly clearedHostiles = new Map<string, NPC[]>();
 
   constructor(npcs: NPC[]) {
     this.byId   = new Map(npcs.map(n => [n.id, n]));
@@ -104,8 +106,9 @@ class WorldManager {
   /**
    * Removes all hostile NPCs from a room — called when they're defeated in
    * combat, so they stop appearing in the "Here" list and can't re-trigger a
-   * fight. Session-scoped and global (shared world): defeated hostiles return
-   * on server restart. Returns the NPCs that were removed.
+   * fight. Defeated hostiles are HELD, not destroyed: respawnHostiles()
+   * brings them back later so "clear" quests stay completable for every
+   * player on a long-running shared server. Returns the NPCs removed.
    */
   clearHostiles(roomId: string): NPC[] {
     const list = this.byRoom.get(roomId) ?? [];
@@ -114,7 +117,24 @@ class WorldManager {
 
     this.byRoom.set(roomId, list.filter(n => n.role !== "hostile"));
     for (const npc of removed) this.byId.delete(npc.id);
+    const held = this.clearedHostiles.get(roomId) ?? [];
+    this.clearedHostiles.set(roomId, [...held, ...removed]);
     return removed;
+  }
+
+  /**
+   * Restores every previously-cleared hostile to a room (the respawn).
+   * Returns the returned NPCs, or [] when the room has none waiting.
+   */
+  respawnHostiles(roomId: string): NPC[] {
+    const waiting = this.clearedHostiles.get(roomId) ?? [];
+    if (waiting.length === 0) return [];
+    this.clearedHostiles.delete(roomId);
+
+    const list = this.byRoom.get(roomId) ?? [];
+    this.byRoom.set(roomId, [...list, ...waiting]);
+    for (const npc of waiting) this.byId.set(npc.id, npc);
+    return waiting;
   }
 
   // ── Interaction views ─────────────────────────────────────────────────────

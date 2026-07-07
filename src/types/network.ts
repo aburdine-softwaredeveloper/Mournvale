@@ -283,6 +283,22 @@ export interface SkillScreenMessage {
   payload: SkillScreenView;
 }
 
+// ── Party member sheet (view-only) ──
+
+/**
+ * A fellow party member's character sheet, sent on request. Read-only on the
+ * client: it reuses the SkillScreenView snapshot but the viewer can't spend
+ * points or re-slot abilities for someone else.
+ */
+export interface PartyMemberSheetMessage {
+  type: "party_member_sheet";
+  payload: {
+    sheet: SkillScreenView;
+    /** One-line summary of the member's equipped-gear bonus. */
+    gearSummary: string;
+  };
+}
+
 // ── Inventory screen ──
 
 /** One row in the inventory screen (a stack of an item, or an equipped piece). */
@@ -533,6 +549,15 @@ export interface PartyLeaveMessage {
   payload: Record<string, never>;
 }
 
+/** Ask to view a fellow party member's character sheet (read-only). */
+export interface PartyMemberSheetRequestMessage {
+  type: "party_member_sheet_request";
+  payload: {
+    /** The member's session player id (PartyMemberView.playerId). */
+    memberId: string;
+  };
+}
+
 // ── Quest actions (client → server) ──
 
 /** Request the quest board contents (when reading the board) */
@@ -654,6 +679,7 @@ export type ServerMessage =
   | SaveResultMessage
   | PartyUpdateMessage
   | PartyInviteMessage
+  | PartyMemberSheetMessage
   | QuestBoardMessage
   | SkillScreenMessage
   | InventoryScreenMessage
@@ -678,6 +704,7 @@ export type ClientMessage =
   | PartyInviteSendMessage
   | PartyInviteRespondMessage
   | PartyLeaveMessage
+  | PartyMemberSheetRequestMessage
   | QuestBoardRequestMessage
   | QuestAcceptMessage
   | QuestAbandonMessage

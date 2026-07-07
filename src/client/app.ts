@@ -33,10 +33,10 @@ import { CharacterCreationScreen } from "./screens/CharacterCreationScreen";
 import { GameScreen } from "./screens/GameScreen";
 import { CombatScreen } from "./screens/CombatScreen";
 import { QuestBoard } from "./components/QuestBoard";
-import { setMusic, isMusicMuted, setMusicMuted } from "./util/music";
-import { isMuted, setMuted } from "./util/audio";
-import { SettingsPanel, AUDIO_CHANGE_EVENT } from "./components/SettingsPanel";
+import { setMusic } from "./util/music";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { InventoryPanel } from "./components/InventoryPanel";
+import { MemberSheetPanel } from "./components/MemberSheetPanel";
 import { ShopPanel } from "./components/ShopPanel";
 import { InvitePrompt } from "./components/InvitePrompt";
 import type { PortraitSpec } from "../engine/assets/PortraitCompositor";
@@ -57,7 +57,9 @@ import type { TalkIntent } from "../types/npc";
 function resolveServerUrl(): string {
   const override = import.meta.env.VITE_SERVER_URL;
   if (override) return override;
-  if (import.meta.env.DEV) return "ws://localhost:3000";
+  // Dev server runs on 3001 (see package.json) so it never collides with a
+  // PM2/production instance holding 3000 on the same machine.
+  if (import.meta.env.DEV) return "ws://localhost:3001";
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${window.location.host}`;
 }
@@ -83,6 +85,7 @@ class MournvaleClient {
   private readonly shopPanel = new ShopPanel();
   private readonly invitePrompt = new InvitePrompt();
   private readonly settingsPanel = new SettingsPanel();
+  private readonly memberSheetPanel = new MemberSheetPanel();
 
   /** Buffers character draft locally for the final character_create send */
   private draft: Record<string, string> = {};
@@ -122,7 +125,6 @@ class MournvaleClient {
 
     this.connect();
     this.buildCombatContainer();
-    this.buildSoundToggle();
 
     // The sleepy-dread town theme underscores everything outside combat.
     // Safe to request now: the music engine idles until the AudioContext
@@ -149,6 +151,11 @@ class MournvaleClient {
     // Wire the party panel's Invite button (replaces the `invite` command)
     this.game.setPartyInviteHandler((name) => {
       this.send({ type: "party_invite_send", payload: { targetName: name } });
+    });
+
+    // Clicking a party member card asks the server for their sheet (read-only).
+    this.game.setPartyMemberViewHandler((memberId) => {
+      this.send({ type: "party_member_sheet_request", payload: { memberId } });
     });
 
     // Wire the quest board's accept / abandon / close
@@ -221,36 +228,6 @@ class MournvaleClient {
 
   private hideCombatOverlay(): void {
     if (this.combatContainer) this.combatContainer.style.display = "none";
-  }
-
-  /**
-   * A small always-available master sound toggle (fixed, bottom-right).
-   * It sits above the combat overlay so audio can be silenced mid-fight,
-   * and it mutes/unmutes music AND sound effects together. Fine-grained
-   * control lives in the ⚙ Settings panel; this button stays in sync
-   * with it via the AUDIO_CHANGE_EVENT.
-   */
-  private buildSoundToggle(): void {
-    const btn = document.createElement("button");
-    btn.id = "sound-toggle";
-    btn.type = "button";
-    const paint = (): void => {
-      const allOff = isMuted() && isMusicMuted();
-      btn.textContent = allOff ? "♪ ✕" : "♪";
-      btn.classList.toggle("muted", allOff);
-      btn.title = allOff ? "Sound off — click to unmute" : "Sound on — click to mute all";
-      btn.setAttribute("aria-label", btn.title);
-    };
-    paint();
-    btn.addEventListener("click", () => {
-      // If anything is audible, silence everything; else restore everything.
-      const mute = !(isMuted() && isMusicMuted());
-      setMuted(mute);
-      setMusicMuted(mute);
-      paint();
-    });
-    window.addEventListener(AUDIO_CHANGE_EVENT, paint);
-    document.body.appendChild(btn);
   }
 
   // ─────────────────────────────────────────────
@@ -393,6 +370,10 @@ class MournvaleClient {
 
       case "party_invite":
         this.invitePrompt.show(msg.payload);
+        break;
+
+      case "party_member_sheet":
+        this.memberSheetPanel.show(msg.payload.sheet, msg.payload.gearSummary);
         break;
 
       case "quest_board":

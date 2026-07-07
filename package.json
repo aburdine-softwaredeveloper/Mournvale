@@ -7,7 +7,7 @@
     "doc": "docs"
   },
 "scripts": {
-  "dev:server": "tsx watch src/server/index.ts",
+  "dev:server": "PORT=${PORT:-3001} tsx watch src/server/index.ts",
   "dev:client": "vite",
   "dev": "concurrently -n SERVER,CLIENT -c green,blue \"npm run dev:server\" \"npm run dev:client\"",
   "build:client": "vite build",
