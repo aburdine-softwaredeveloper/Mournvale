@@ -454,6 +454,35 @@ export class CombatManager {
     return false;
   }
 
+  /**
+   * Pulls a player out of whatever live combat they're in — used when they
+   * disconnect mid-fight. Their entity falls (leaves the grid) and any pending
+   * submission of theirs is dropped, so the round can no longer wait on them.
+   * Without this, one player closing the app froze the fight forever: the
+   * room stayed combat-locked and party members waited on a ghost.
+   *
+   * Returns what the caller needs to finish the job (resolve the round if the
+   * leaver was the last holdout, or end the combat if no players remain), or
+   * null when the player wasn't fighting.
+   */
+  removePlayer(playerId: string): { combatId: string; roomId: string; playersRemain: boolean } | null {
+    for (const state of this.combats.values()) {
+      const entity = state.entities.find(e => e.type === "player" && e.playerId === playerId);
+      if (!entity) continue;
+
+      if (!entity.isDead) {
+        entity.isDead = true;
+        setCell(state.grid, entity.position, undefined);
+      }
+      state.pendingSubmissions = state.pendingSubmissions.filter(id => id !== entity.id);
+      delete state.submissions[entity.id];
+
+      const playersRemain = state.entities.some(e => e.type === "player" && !e.isDead);
+      return { combatId: state.id, roomId: state.roomId, playersRemain };
+    }
+    return null;
+  }
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   createCombat(

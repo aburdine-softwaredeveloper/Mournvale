@@ -152,6 +152,11 @@ export class JsonFileSaveStore implements SaveStore {
       if (!parsed.inventory) {
         parsed.inventory = newInventory();
       }
+      // Migration: v4 saves predate `lore`. Backfill an empty journal — the
+      // character simply hasn't been told anything yet.
+      if (!parsed.lore) {
+        parsed.lore = [];
+      }
       parsed.version = SAVE_VERSION;
 
       return parsed;
@@ -204,7 +209,8 @@ export function buildSaveData(
   roomId: string,
   progression?: SaveData["progression"],
   social?: SaveData["social"],
-  inventory?: SaveData["inventory"]
+  inventory?: SaveData["inventory"],
+  lore?: SaveData["lore"]
 ): SaveData {
   return {
     version: SAVE_VERSION,
@@ -213,6 +219,7 @@ export function buildSaveData(
     ...(progression && { progression }),
     ...(social && { social }),
     ...(inventory && { inventory }),
+    ...(lore && { lore }),
     savedAt: Date.now(),
   };
 }

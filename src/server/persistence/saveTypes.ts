@@ -18,10 +18,11 @@ import type { Inventory } from "../../types/items";
 /**
  * Current save format version. Bump when SaveData's shape changes.
  * v2 added `progression`; v3 added `social` (drifting NPC relationships);
- * v4 added `inventory` (gold, items, equipped gear).
+ * v4 added `inventory` (gold, items, equipped gear); v5 added `lore`
+ * (campaign knowledge learned from conversation, gates story quests).
  * Older saves are migrated on load (see SaveStore.load).
  */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /**
  * The full persisted state for a single character.
@@ -51,6 +52,12 @@ export interface SaveData {
    * when missing, so loaded data always carries one.
    */
   inventory?: Inventory;
+  /**
+   * Campaign lore keys learned from conversation / quest completions — gates
+   * which story quests appear on the board. Optional so older saves still
+   * parse; SaveStore.load backfills an empty list when missing.
+   */
+  lore?: string[];
   /** Unix timestamp (ms) of when this save was written */
   savedAt: number;
 }

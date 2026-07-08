@@ -105,6 +105,14 @@ export interface Player {
    * only through types/items.ts helpers. Present when state === "active".
    */
   inventory?: Inventory;
+
+  /**
+   * Campaign lore keys this character has learned by talking to the townsfolk
+   * (NPC.meetLore, dialogue-branch loreKey) or finishing quests that teach one
+   * (Quest.grantsLore). Gates which authored quests appear on their board
+   * (Quest.requiresLore). Scoped to `activeSlot`; persisted with the save.
+   */
+  lore?: string[];
 }
 
 // ─────────────────────────────────────────────

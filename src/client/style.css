@@ -1083,6 +1083,26 @@ html, body {
   image-rendering: pixelated;
 }
 
+/* Real painted busts (their svg wraps an <image>) shed the card chrome and
+   float directly over the scene; placeholder SVGs keep the framed-card look. */
+.dlg-portrait-frame:has(image) {
+  background: none;
+  border: none;
+  outline: none;
+}
+
+.dlg-portrait-frame:has(image) svg {
+  image-rendering: auto;
+  /* Sink the bust into the room's candle-lit gloom: dim + warm it toward the
+     sepia art, then ground it with a soft cast shadow. */
+  filter:
+    sepia(0.24) saturate(0.8) brightness(0.86) contrast(1.05)
+    drop-shadow(0 5px 9px rgba(15, 10, 5, 0.6));
+  /* Melt the hard-cut torso bottom into the scene instead of ending on a line. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 86%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 86%, transparent 100%);
+}
+
 .dlg-portrait-name {
   font-size: 7px;
   letter-spacing: 1px;
@@ -1473,6 +1493,24 @@ html, body {
   margin-bottom: 8px;
 }
 
+/* Rumor teasers — story quests still hidden behind a conversation. Read as
+   overheard talk: italic serif whispers, dimmer than a real posting. */
+.quest-rumor-header {
+  color: var(--color-text-gold);
+  font-size: 8px;
+  letter-spacing: 2px;
+  margin-top: 6px;
+}
+
+.quest-card.quest-rumor {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-dim);
+  border-style: dashed;
+}
+
 .quest-active {
   border: var(--border-width) solid var(--color-border-gold);
   background: var(--color-bg-panel-alt);
@@ -1540,16 +1578,42 @@ html, body {
     padding: 8px 10px;
   }
 
-  #details-panel { max-height: 26vh; }
-  #room-image-panel { max-height: 32vh; }
+  /* The details panel must show the room name, exits AND the Here: list —
+     the NPC rows are the game's main touch surface (talk/fight buttons).
+     The long prose description is clamped to two lines instead of capping
+     the panel so short that Here:/Party: scroll out of sight. */
+  #details-panel { max-height: 30vh; }
+  .panel-divider { margin: 6px 0; }
+  /* Two lines of description, then a clean cut — the log and `look` carry
+     the full prose. (max-height beats line-clamp here: clamp fought the
+     pre-wrap text and collapsed the box entirely.) */
+  .room-desc-text {
+    max-height: 3.8em; /* 2 lines at line-height 1.9 */
+    overflow: hidden;
+    /* Without this, the details flex column crushes the (now overflow:hidden)
+       description to zero height instead of letting the panel scroll. */
+    flex-shrink: 0;
+  }
+  #room-image-panel { max-height: 30vh; }
 
-  /* Keep the square illustration from eating the whole viewport, and
-     guarantee the log a readable strip beneath it. */
+  /* The illustration becomes a full-width banner plate (cropped, not
+     letterboxed) so no cream dead-space flanks it on a narrow page.
+     flex-basis (not height) so the flex column can't crush it. */
   .room-image {
-    max-width: min(100%, 28vh);
+    aspect-ratio: auto;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    flex: 0 0 clamp(80px, 14vh, 150px);
     margin-inline: auto;
   }
-  #log-panel { min-height: 130px; }
+  .room-image svg,
+  .room-image-png,
+  .room-image-art svg,
+  .room-image-art .room-image-png {
+    object-fit: cover;
+  }
+  #log-panel { min-height: 140px; }
 
   #game-header { padding: 6px 10px; }
   .header-portrait { width: 36px; height: 44px; }
@@ -1558,8 +1622,12 @@ html, body {
   /* ── Touch targets: comfortable thumb sizes ── */
 
   .snes-btn { padding: 10px 12px; min-height: 38px; }
-  .cmd-btn  { padding: 9px 11px; font-size: 8px; min-height: 36px; }
+  /* Commands pack into a fixed 4-column grid — three tidy rows instead of a
+     ragged wall of buttons, reclaiming ~70px of vertical space for the log. */
+  #command-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .cmd-btn  { padding: 8px 2px; font-size: 7px; min-height: 40px; }
   #command-menu { padding: 6px 10px; }
+  #command-menu .panel-title { display: none; }
   #input-panel  { padding: 8px 10px; }
   .pixel-input  { font-size: 11px; min-height: 34px; }
 

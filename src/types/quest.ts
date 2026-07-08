@@ -84,6 +84,26 @@ export interface Quest {
    * a bare "Quest complete" toast. Absent = no spoken resolution (reward only).
    */
   resolution?: string;
+  /**
+   * Lore keys the player must have LEARNED (by talking to the townsfolk —
+   * see NPC.meetLore / DialogueOutcomeData.loreKey) before this quest appears
+   * on their board. This is what makes conversation advance the campaign:
+   * the town's story quests are hidden behind knowledge only its people hold.
+   * Absent = always visible (starter jobs).
+   */
+  requiresLore?: string[];
+  /**
+   * Lore keys granted to every recipient when this quest completes — a
+   * finished job can itself be the knowledge that unlocks the next chapter
+   * (finding what silenced the bell reveals the way to the fog's heart).
+   */
+  grantsLore?: string[];
+  /**
+   * The teaser shown on the board while `requiresLore` is unmet — a rumor
+   * pointing the player at WHO to talk to, so a locked quest reads as a
+   * thread to pull rather than a hole in the list.
+   */
+  rumorHint?: string;
 }
 
 /**
@@ -111,4 +131,10 @@ export interface ActiveQuest {
 export interface QuestBoardView {
   available: Quest[];
   active: ActiveQuest | null;
+  /**
+   * Teasers for authored quests the player hasn't unlocked yet (their
+   * `requiresLore` is unmet). Each is a rumorHint line pointing at who in
+   * town to talk to. Rendered as a "Rumors" section under the real cards.
+   */
+  rumors?: string[];
 }

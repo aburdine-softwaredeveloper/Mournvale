@@ -58,6 +58,28 @@ export class QuestBoard {
   public render(view: QuestBoardView): void {
     this.renderActive(view.active);
     this.renderAvailable(view.available, view.active !== null);
+    this.renderRumors(view.rumors ?? []);
+  }
+
+  /**
+   * Renders rumor teasers for story quests the player hasn't unlocked yet —
+   * each one points at WHO in town to talk to. This is the board telling the
+   * player that conversation, not just steel, moves the campaign forward.
+   */
+  private renderRumors(rumors: string[]): void {
+    if (rumors.length === 0) return;
+
+    const header = document.createElement("div");
+    header.className = "quest-rumor-header";
+    header.textContent = "❦ RUMORS AROUND TOWN";
+    this.listEl.appendChild(header);
+
+    for (const rumor of rumors) {
+      const card = document.createElement("div");
+      card.className = "quest-card quest-rumor";
+      card.textContent = rumor;
+      this.listEl.appendChild(card);
+    }
   }
 
   /** Renders the active-quest banner (or hides it). */

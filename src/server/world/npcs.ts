@@ -106,8 +106,14 @@ export const NPCS: NPC[] = [
     dialogue: [
       { text: "If you're looking for honest danger, I've no shortage of it." },
       { text: "A caravan went missing on the north road. I need eyes I can trust — and a party, not a fool alone." },
+      { text: "And fog-wolves circle the north gate after dark. The watch can't spare the blades. Maybe you can." },
     ],
     questIds: ["authored-fog-scout", "authored-wolves"],
+    // Hearing the Captain out is what puts the wolf trouble on your board.
+    meetLore: {
+      key: "wolves_at_gate",
+      note: "Fog-wolves circle the north gate after dark — Captain Vey wants the pack thinned before it breaches the wall.",
+    },
     dialogueBranches: [
       {
         intent: "persuade",
@@ -168,7 +174,39 @@ export const NPCS: NPC[] = [
       { text: "Quiet here, mostly. The dead keep better company than the living." },
       { text: "The chapel bell hasn't rung since the Greyfall came. Something's wrong up in that tower. Brave folk only." },
     ],
-    questIds: ["authored-bell"],
+    questIds: ["authored-bell", "authored-fog-boss"],
+    // His grievance IS the quest hook: hear the old man out and The Silent
+    // Bell opens on your board.
+    meetLore: {
+      key: "bell_silenced",
+      note: "The chapel bell has been silent since the Greyfall came — Old Hollis swears something up in that tower is wrong.",
+    },
+    dialogueBranches: [
+      {
+        intent: "inquire",
+        dc: 12,
+        outcomes: {
+          crit_success: {
+            npcLine:
+              "Hollis studies you a long while, then points his spade north. \"The fog road past the chapel — it keeps going where no road should. At the end of it something breathes. I've seen its glow on the bad nights, from the tower. You didn't hear it from me.\"",
+            infoReveal: "The fog road runs north past the chapel to the living heart of the Greyfall.",
+            loreKey: "fogheart_path",
+          },
+          success: {
+            npcLine:
+              "\"You listen like the dead do — proper.\" He lowers his voice. \"The fog's got a middle, same as a storm's got an eye. North, past the chapel, past where the road ought to end. That's where it sleeps.\"",
+            infoReveal: "The Greyfall has a heart, somewhere north beyond the fog road.",
+            loreKey: "fogheart_path",
+          },
+          fail: {
+            npcLine: "\"Some questions dig graves, friend.\" He turns back to his work and won't be drawn.",
+          },
+          crit_fail: {
+            npcLine: "\"Prying at an old man's nightmares for sport, are you?\" Hollis spits on the turned earth and says nothing more.",
+          },
+        },
+      },
+    ],
   },
 
   // ── Smithy ──
