@@ -1,17 +1,20 @@
 /**
- * NpcPortrait.ts — Procedural placeholder portraits for NPCs
+ * NpcPortrait.ts — Dialogue portraits for NPCs
  *
- * NPCs carry no portrait art (see NpcView), so for the sliding dialogue
- * portrait we synthesize a small framed "bust": a hooded silhouette over a
- * role-tinted backdrop, with the NPC's initial. The tint is derived from
- * the NPC role, and a stable hue jitter is hashed from the name so two
- * NPCs of the same role still read as distinct.
+ * Named townsfolk have real painted bust art (assets/npcs/<slug>.png,
+ * chroma-keyed to transparency and mirrored to face RIGHT, toward the
+ * player, since the NPC slot slides in from the left). For NPCs without
+ * art (vermin, wolves, generated encounters) we fall back to a synthesized
+ * placeholder: a hooded silhouette over a role-tinted backdrop with the
+ * NPC's initial.
  *
  * Pure string assembly (like PortraitCompositor) — returns an <svg> that
- * can be injected via innerHTML. No DOM, no fetch.
+ * can be injected via innerHTML. No DOM, no fetch (raster art loads lazily
+ * through the <image href>).
  */
 
 import type { NpcRole } from "../../types/npc";
+import { assetRegistry } from "./AssetRegistry";
 
 const CANVAS_W = 120;
 const CANVAS_H = 150;
@@ -25,6 +28,17 @@ const ROLE_TINT: Record<NpcRole, { top: string; bottom: string; robe: string }> 
   friendly:   { top: "#e0cea4", bottom: "#c8b07e", robe: "#4e4630" },
   dialogue:   { top: "#ddcaa0", bottom: "#c6ae7c", robe: "#54432a" },
 };
+
+/** Named townsfolk with painted bust art under assets/npcs/<slug>.png. */
+const PORTRAIT_ART = new Set([
+  "aldric", "marta", "captain_vey", "sister_mara", "old_hollis",
+  "borin", "welk", "isolde", "tomas", "pip",
+]);
+
+/** "Captain Vey" → "captain_vey" (matches both NPC ids and art filenames). */
+function portraitSlug(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+}
 
 /** Small deterministic hash → 0..1, for stable per-name hue jitter. */
 function hash01(text: string): number {
@@ -42,6 +56,23 @@ function hash01(text: string): number {
  * @param role  NPC role (drives the backdrop tint)
  */
 export function composeNpcPortrait(name: string, role: NpcRole): string {
+  const slug = portraitSlug(name);
+  if (PORTRAIT_ART.has(slug)) {
+    const url = assetRegistry.resolveUrl(`npcs/${slug}`);
+    // Bottom-anchored (xMidYMax) so the bust sits on the frame's lower edge,
+    // like a speaker leaning into view. image-rendering:auto overrides the
+    // frame's pixelated default — this is painted art, not pixel art.
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CANVAS_W} ${CANVAS_H}" ` +
+      `width="100%" height="100%" preserveAspectRatio="xMidYMax meet" ` +
+      `role="img" aria-label="${escapeAttr(name)}" style="image-rendering:auto">` +
+        `<image href="${escapeAttr(url)}" x="0" y="0" ` +
+          `width="${CANVAS_W}" height="${CANVAS_H}" ` +
+          `preserveAspectRatio="xMidYMax meet"/>` +
+      `</svg>`
+    );
+  }
+
   const tint = ROLE_TINT[role] ?? ROLE_TINT.dialogue;
   const initial = (name.trim().charAt(0) || "?").toUpperCase();
 

@@ -274,7 +274,7 @@ server.on("connection", (socket: WebSocket) => {
       currentPlayer.playerId &&
       currentPlayer.activeSlot
     ) {
-      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId, currentPlayer.progression, currentPlayer.social, currentPlayer.inventory);
+      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId, currentPlayer.progression, currentPlayer.social, currentPlayer.inventory, currentPlayer.lore);
       const { playerId, activeSlot } = currentPlayer;
       saveStore
         .save(playerId, activeSlot, data)
@@ -287,6 +287,51 @@ server.on("connection", (socket: WebSocket) => {
         type: "player_presence",
         payload: { playerName: getDisplayName(currentPlayer), event: "left" },
       }, currentPlayer.id);
+    }
+
+    // Leaving mid-fight counts as falling: the entity dies and the round no
+    // longer waits on them. Otherwise one closed tab froze the combat (and
+    // the room it locked) forever, and party members waited on a ghost.
+    if (currentPlayer.playerId) {
+      const combatExit = combatManager.removePlayer(currentPlayer.playerId);
+      if (combatExit) {
+        if (!combatExit.playersRemain) {
+          // Nobody left standing on the players' side — dissolve the fight.
+          // The hostiles were never defeated, so they simply remain.
+          combatManager.endCombat(combatExit.combatId);
+          console.log(`[combat] Fight in ${combatExit.roomId} dissolved — last player disconnected.`);
+        } else {
+          const combatState = combatManager.getState(combatExit.combatId);
+          if (combatState) {
+            const remaining = combatState.entities
+              .filter(e => e.type === "player" && e.playerId && e.playerId !== currentPlayer.playerId)
+              .map(e => e.playerId!);
+            for (const pid of remaining) {
+              emitToPlayer(pid, {
+                type: "system",
+                payload: { message: `${getDisplayName(currentPlayer)} is swallowed by the fog — they fight no more.` },
+              });
+            }
+            if (combatState.phase === "planning" && combatState.pendingSubmissions.length === 0) {
+              // The leaver was the last one everyone was waiting on.
+              resolveCombatRound(combatExit.combatId);
+            } else {
+              // Refresh each survivor's "waiting on…" list minus the leaver.
+              const pendingPlayerIds = combatState.pendingSubmissions
+                .map(eid => combatState.entities.find(e => e.id === eid)?.playerId)
+                .filter((pid): pid is string => pid !== undefined);
+              for (const pid of remaining) {
+                const view = combatManager.getViewForPlayer(combatExit.combatId, pid);
+                if (!view) continue;
+                emitToPlayer(pid, {
+                  type: "combat_planning",
+                  payload: { combatId: combatExit.combatId, round: combatState.round, state: view, pendingPlayerIds },
+                });
+              }
+            }
+          }
+        }
+      }
     }
 
     // A solo player's active quest would otherwise be orphaned forever under
@@ -391,6 +436,7 @@ async function handleMenuMessage(
       player.progression = data.progression ?? newProgression(data.character.characterClass);
       player.social      = data.social ?? newSocialMemory();
       player.inventory   = data.inventory ?? newInventory();
+      player.lore        = data.lore ?? [];
       player.roomId      = rooms[data.roomId] ? data.roomId : "tavern";
       player.state       = "active";
 
@@ -488,6 +534,7 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
       player.progression = newProgression(character.characterClass);
       player.social    = newSocialMemory();
       player.inventory = addItem(newInventory(STARTING_GOLD), "healing_potion", 2);
+      player.lore      = [];
       player.state     = "active";
       player.roomId    = "tavern";
 
@@ -517,7 +564,7 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
       });
 
       if (player.playerId && player.activeSlot) {
-        const data = buildSaveData(character, player.roomId, player.progression, player.social, player.inventory);
+        const data = buildSaveData(character, player.roomId, player.progression, player.social, player.inventory, player.lore);
         const { playerId, activeSlot } = player;
         saveStore
           .save(playerId, activeSlot, data)
@@ -692,6 +739,17 @@ function handleTalk(
     },
   });
 
+  // Conversation moves the story: hearing this NPC at all may teach campaign
+  // lore (meetLore), and a won skill check can teach its branch's loreKey —
+  // either can open new quests on the board (announced by grantLore).
+  maybeGrantMeetLore(player, npc);
+  if (intent && result.checkDisplay) {
+    const branchLore = npc.dialogueBranches
+      ?.find((b) => b.intent === intent)
+      ?.outcomes[result.checkDisplay.outcome]?.loreKey;
+    if (branchLore) grantLore(player, [branchLore]);
+  }
+
   // Conversation portraits: actor sees the NPC from the left; other room
   // players see the actor slide in from the right.
   sendToPlayer(socket, {
@@ -818,7 +876,7 @@ function handleSpeakCommand(player: Player, socket: WebSocket, input: string): b
       sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} is in no mood to talk — you'll need to fight.` } });
       return true;
     }
-    const message = rest.slice(1).join(" ").trim();
+    const message = rest.slice(npcNameTokenCount(rest, npc)).join(" ").trim();
     if (!message) {
       sendToPlayer(socket, { type: "system", payload: { message: `What do you say to ${npc.name}?` } });
       return true;
@@ -842,7 +900,7 @@ function handleSpeakCommand(player: Player, socket: WebSocket, input: string): b
       sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} is in no mood to talk — you'll need to fight.` } });
       return true;
     }
-    const message = rest.slice(1).join(" ").trim();
+    const message = rest.slice(npcNameTokenCount(rest, npc)).join(" ").trim();
     if (!message) {
       sendToPlayer(socket, { type: "system", payload: { message: `What would you like to say to ${npc.name}?` } });
       return true;
@@ -866,6 +924,20 @@ function handleSpeakCommand(player: Player, socket: WebSocket, input: string): b
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * How many leading tokens of `rest` belong to the NPC's name. The intent
+ * buttons prefill "persuade Captain Vey " — matching only rest[0] made the
+ * rest of the name ("Vey") leak into the message the NPC was answering.
+ * Greedy but safe: it only swallows tokens that are literally part of the
+ * matched NPC's name, so real words are never eaten.
+ */
+function npcNameTokenCount(rest: string[], npc: NPC): number {
+  const nameTokens = new Set(npc.name.toLowerCase().split(/\s+/));
+  let i = 1; // rest[0] is the token that matched the NPC
+  while (i < rest.length && nameTokens.has(rest[i]!.toLowerCase())) i++;
+  return i;
 }
 
 /**
@@ -1013,6 +1085,12 @@ function runNpcChat(
       if (outcome?.questUnlock) {
         sendToPlayer(socket, { type: "system", payload: { message: `${npc.name} has work for you — check the quest board.` } });
       }
+
+      // Conversation moves the story: being heard at all can teach campaign
+      // lore (meetLore), and a won check can teach the branch's loreKey —
+      // either may open new quests on the board (announced by grantLore).
+      maybeGrantMeetLore(player, npc);
+      if (outcome?.loreKey) grantLore(player, [outcome.loreKey]);
     })
     .catch((err) => {
       console.error("[npc-chat] reply failed:", err);
@@ -1152,8 +1230,24 @@ function handleCombatSubmitAction(
   }
 
   if (!allSubmitted) return;
+  resolveCombatRound(combatId);
+}
 
-  // ── All players submitted → resolve ───────────────────────────────────────
+/**
+ * Resolves the current combat round and broadcasts the results (and, when the
+ * fight ends, the spoils). Split out of handleCombatSubmitAction so the
+ * disconnect path can also resolve a round — when the leaver was the last
+ * player everyone else was waiting on, the fight must not hang forever.
+ */
+function resolveCombatRound(combatId: string): void {
+  const state = combatManager.getState(combatId);
+  if (!state) return;
+
+  const playersInCombat = state.entities
+    .filter(e => e.type === "player" && e.playerId)
+    .map(e => e.playerId!);
+
+  // ── Resolve ───────────────────────────────────────────────────────────────
   const { events, isOver, outcome } = combatManager.resolveRound(combatId);
 
   // Broadcast the resolution to everyone in the room
@@ -1437,6 +1531,13 @@ function grantQuestCompletion(player: Player, ownerKey: string): void {
     }
 
     sendToPlayer(member.socket, { type: "system", payload: { message: rewardLine } });
+
+    // A finished job can itself be the knowledge that opens the next chapter
+    // (the bell's grey knot points at the fog's heart). Announced by grantLore.
+    if (active.quest.grantsLore?.length) {
+      grantLore(member, active.quest.grantsLore);
+    }
+
     sendQuestBoard(member, member.socket);
 
     // Finishing the work becomes good talk: seed a "deed" rumor at the NPC who
@@ -1536,7 +1637,7 @@ function maybeTurnInQuest(player: Player, npc: { id: string }): boolean {
  */
 function saveProgress(player: Player): void {
   if (!player.playerId || !player.activeSlot || !player.character || !player.roomId) return;
-  const data = buildSaveData(player.character, player.roomId, player.progression, player.social, player.inventory);
+  const data = buildSaveData(player.character, player.roomId, player.progression, player.social, player.inventory, player.lore);
   const { playerId, activeSlot } = player;
   saveStore
     .save(playerId, activeSlot, data)
@@ -1965,15 +2066,63 @@ function questOwnerKey(player: Player): string {
   return partyManager.getPartyId(player.id) ?? player.id;
 }
 
+/** The lore this character has learned, as a set for the quest-gating checks. */
+function knownLoreOf(player: Player): ReadonlySet<string> {
+  return new Set(player.lore ?? []);
+}
+
+/**
+ * Teaches a character campaign lore. New keys are noted to the player,
+ * persisted, and — the payoff — any story quest the knowledge just unlocked is
+ * announced by name, so a conversation visibly moves the campaign forward.
+ * Already-known keys are ignored. Returns true if anything new was learned.
+ */
+function grantLore(player: Player, keys: string[], note?: string): boolean {
+  if (!player.lore) player.lore = [];
+  const fresh = keys.filter((k) => !player.lore!.includes(k));
+  if (fresh.length === 0) return false;
+
+  const before = new Set(player.lore);
+  player.lore.push(...fresh);
+  const after = new Set(player.lore);
+
+  if (note) {
+    sendToPlayer(player.socket, {
+      type: "system",
+      payload: { message: `✦ You note it down: ${note}` },
+    });
+  }
+
+  for (const quest of questManager.unlockedBetween(before, after)) {
+    sendToPlayer(player.socket, {
+      type: "system",
+      payload: { message: `❖ New work has opened on the quest board: "${quest.title}".` },
+    });
+  }
+
+  saveProgress(player);
+  return true;
+}
+
+/**
+ * First meeting's gift: some townsfolk teach you something just by being
+ * heard (NPC.meetLore) — the cheapest way conversation advances the story.
+ * Runs on every talk path; grantLore dedups, so it fires once per character.
+ */
+function maybeGrantMeetLore(player: Player, npc: NPC): void {
+  if (!npc.meetLore) return;
+  grantLore(player, [npc.meetLore.key], npc.meetLore.note);
+}
+
 function sendQuestBoard(player: Player, socket: WebSocket): void {
-  const view = questManager.buildView(questOwnerKey(player));
+  const view = questManager.buildView(questOwnerKey(player), knownLoreOf(player));
   sendToPlayer(socket, { type: "quest_board", payload: view });
 }
 
 function handleQuestAccept(player: Player, socket: WebSocket, questId: string): void {
   const partyId  = partyManager.getPartyId(player.id);
   const ownerKey = partyId ?? player.id;
-  const error    = questManager.accept(ownerKey, questId, partyId !== null, partyId);
+  const error    = questManager.accept(ownerKey, questId, partyId !== null, partyId, knownLoreOf(player));
 
   if (error) {
     sendToPlayer(socket, { type: "system", payload: { message: error } });

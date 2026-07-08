@@ -61,17 +61,57 @@ export class QuestManager {
    * Builds the board view for a given owner key (solo player id or party
    * id): every authored quest this owner hasn't done or taken, the shared
    * generated jobs, and the owner's active quest, if any.
+   *
+   * `knownLore` is the viewing character's learned campaign lore. Authored
+   * quests whose `requiresLore` isn't fully known are withheld from the
+   * available list and surfaced as rumor teasers instead — talking to the
+   * townsfolk is how the campaign's later chapters appear. When omitted
+   * (tests / trusted callers) no lore gating is applied.
    */
-  public buildView(ownerKey: string): QuestBoardView {
+  public buildView(ownerKey: string, knownLore?: ReadonlySet<string>): QuestBoardView {
     const done = this.completedByOwner.get(ownerKey);
     const activeId = this.activeByOwner.get(ownerKey)?.quest.id;
     const authored = AUTHORED_QUESTS.filter(
       (q) => q.id !== activeId && !done?.has(q.id)
     );
+
+    const unlocked = knownLore
+      ? authored.filter((q) => this.loreMet(q, knownLore))
+      : authored;
+    const rumors = knownLore
+      ? authored
+          .filter((q) => !this.loreMet(q, knownLore))
+          .map((q) => q.rumorHint)
+          .filter((hint): hint is string => !!hint)
+      : [];
+
     return {
-      available: [...authored, ...this.generatedBoard.values()],
+      available: [...unlocked, ...this.generatedBoard.values()],
       active: this.activeByOwner.get(ownerKey) ?? null,
+      ...(rumors.length > 0 ? { rumors } : {}),
     };
+  }
+
+  /** True when the owner knows every lore key this quest requires. */
+  private loreMet(quest: Quest, knownLore: ReadonlySet<string>): boolean {
+    return (quest.requiresLore ?? []).every((key) => knownLore.has(key));
+  }
+
+  /**
+   * Authored quests whose lore gate is satisfied by `after` but wasn't by
+   * `before`. Lets the caller announce "new work has opened" the moment a
+   * conversation teaches the unlocking fact — the visible payoff for talking.
+   */
+  public unlockedBetween(
+    before: ReadonlySet<string>,
+    after: ReadonlySet<string>
+  ): Quest[] {
+    return AUTHORED_QUESTS.filter(
+      (q) =>
+        (q.requiresLore?.length ?? 0) > 0 &&
+        !this.loreMet(q, before) &&
+        this.loreMet(q, after)
+    );
   }
 
   // ─────────────────────────────────────────────
@@ -91,7 +131,8 @@ export class QuestManager {
     ownerKey: string,
     questId: string,
     inParty: boolean,
-    partyId: string | null
+    partyId: string | null,
+    knownLore?: ReadonlySet<string>
   ): string | null {
     if (this.activeByOwner.has(ownerKey)) {
       return "You already have an active quest. Abandon it first.";
@@ -102,6 +143,11 @@ export class QuestManager {
     if (authored) {
       if (this.completedByOwner.get(ownerKey)?.has(questId)) {
         return "You've already seen that job through.";
+      }
+      // Server-authoritative lore gate: a client can't accept a quest whose
+      // story prerequisites it hasn't learned (mirrors buildView's filter).
+      if (knownLore && !this.loreMet(authored, knownLore)) {
+        return "You don't know enough about that yet. Someone in town does — go talk to them.";
       }
       quest = authored;
     } else {

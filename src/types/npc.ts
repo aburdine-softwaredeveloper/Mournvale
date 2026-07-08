@@ -55,6 +55,12 @@ export interface DialogueOutcomeData {
   questUnlock?: string;
   /** Optional: reveals a piece of world lore displayed to the player. */
   infoReveal?: string;
+  /**
+   * Optional: the persistent lore key this tier teaches (see Quest.requiresLore).
+   * Where infoReveal is the flavor the player reads, loreKey is the campaign
+   * flag it sets — a hard-won conversation can open the next chapter.
+   */
+  loreKey?: string;
   /** Optional: changes the NPC's stance toward the player. */
   standing?: "hostile" | "neutral" | "friendly";
 }
@@ -120,6 +126,14 @@ export interface NPC {
   dialogue: NpcDialogue[];
   /** Quest ids this NPC offers (questgiver role) */
   questIds?: string[];
+  /**
+   * Lore taught simply by talking to this NPC at all (any talk/say path,
+   * first time only per character). `key` is the campaign flag (see
+   * Quest.requiresLore); `note` is the line shown when the player learns it.
+   * This is the cheapest story reward for conversation: seek someone out,
+   * hear them, and new work opens.
+   */
+  meetLore?: { key: string; note: string };
   /**
    * For hostile NPCs: which monster template (enemyTemplates.ts) supplies this
    * combatant's stats. Defaults to the weakest (rat) if omitted, so a hostile

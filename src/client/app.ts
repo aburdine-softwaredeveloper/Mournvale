@@ -110,6 +110,15 @@ class MournvaleClient {
   /** The combat id currently in progress, used for submit_action messages. */
   private activeCombatId: string | null = null;
 
+  /**
+   * True while the player has asked to see the quest board and the reply is
+   * in flight. The server re-sends quest_board on every board change (accept,
+   * completion, party disband…) to keep an OPEN board fresh — without this
+   * flag, each of those refreshes popped the modal over whatever the player
+   * was doing.
+   */
+  private questBoardExpected = false;
+
   // ─────────────────────────────────────────────
   // BOOTSTRAP
   // ─────────────────────────────────────────────
@@ -377,8 +386,13 @@ class MournvaleClient {
         break;
 
       case "quest_board":
+        // Always refresh the contents; only OPEN the modal when the player
+        // asked for it (or it's already up). Background refreshes stay silent.
         this.questBoard.render(msg.payload);
-        this.questBoard.show();
+        if (this.questBoardExpected || this.questBoard.isOpen()) {
+          this.questBoard.show();
+        }
+        this.questBoardExpected = false;
         break;
 
       case "skill_screen":
@@ -570,6 +584,7 @@ class MournvaleClient {
 
       case "quests":
       case "quest":
+        this.questBoardExpected = true;
         this.send({ type: "quest_board_request", payload: {} });
         return;
 

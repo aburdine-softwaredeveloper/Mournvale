@@ -64,8 +64,8 @@ export const AUTHORED_QUESTS: Quest[] = [
       "with the fingers frozen mid-grasp. Whatever took them, it came from above " +
       "the road, out of the fog. Captain Vey will want to hear this.",
     resolution:
-      "Vey turns the frozen glove over in her hands for a long moment, jaw tight. " +
-      "\"Taken from above. So it's not just beasts out there — it's hunting.\" She " +
+      "Vey turns the frozen glove over in his hands for a long moment, jaw tight. " +
+      "\"Taken from above. So it's not just beasts out there — it's hunting.\" He " +
       "presses the Lantern of Warding into your grip. \"This kept my father alive in " +
       "the old fog. Carry it. And keep your eyes on the sky.\"",
   },
@@ -112,6 +112,14 @@ export const AUTHORED_QUESTS: Quest[] = [
     objectiveRoomId: "chapel",
     objectiveKind: "investigate",
     turnInNpcId: "old_hollis",
+    // Chapter gate: you learn of the silent bell from Old Hollis himself —
+    // seek him out among his graves and hear him (NPC meetLore).
+    requiresLore: ["bell_silenced"],
+    rumorHint:
+      "They say the chapel bell hasn't rung since the fog came. The old " +
+      "gravekeeper broods on it — find him among his graves and hear him out.",
+    // What you pull from the bell's throat points at the fog's living heart.
+    grantsLore: ["fogheart_path"],
     lookClue:
       "You climb to the belfry and find the bell whole — but something is wedged " +
       "in its throat: a knot of grey, fibrous matter, cold as grave-dirt and " +
@@ -139,10 +147,16 @@ export const AUTHORED_QUESTS: Quest[] = [
     generated: false,
     objectiveRoomId: "fog_road",
     objectiveKind: "clear",
+    // Chapter gate: the Captain only posts this once you've spoken with him
+    // (NPC meetLore) — the watch doesn't hand its troubles to strangers.
+    requiresLore: ["wolves_at_gate"],
+    rumorHint:
+      "The nightwatch whispers of shapes circling the north gate after dark. " +
+      "If anyone knows the truth of it, it's the Watch Captain at the guard post.",
     resolution:
       "The last wolf's howl thins into the fog and does not return. Word runs ahead " +
       "of you to the gate, where Captain Vey meets you at the wall. \"The nightwatch " +
-      "can sleep tonight,\" she says, and means it. \"The pack won't test that wall " +
+      "can sleep tonight,\" he says, and means it. \"The pack won't test that wall " +
       "again soon. The town owes you a quiet night — take it.\"",
   },
   {
@@ -160,6 +174,14 @@ export const AUTHORED_QUESTS: Quest[] = [
     generated: false,
     objectiveRoomId: "fogheart",
     objectiveKind: "clear",
+    // The campaign's final gate: the way to the fog's heart is knowledge no
+    // notice board carries. It's learned by finishing The Silent Bell, or by
+    // drawing it out of Old Hollis in conversation (his inquire branch).
+    requiresLore: ["fogheart_path"],
+    rumorHint:
+      "The fog has a source — a heart, somewhere past where the roads end. " +
+      "If a way exists, the one who's watched this valley longest knows it. " +
+      "Earn their trust.",
   },
   {
     id: "authored-delivery",

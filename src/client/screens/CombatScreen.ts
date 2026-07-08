@@ -106,7 +106,17 @@ export class CombatScreen {
   private readonly onCombatEnd: (outcome: string) => void;
 
   private state: CombatStateView | null = null;
-  private projection: Projection = "isometric";
+  /**
+   * Board projection. Phones default to the flat top-down view: an 8×8 grid
+   * of 40px cells fits a 375px portrait screen exactly, while the isometric
+   * diagonal (~450px + perspective) would clip tokens off both edges. The
+   * header toggle still offers 2.5D (scaled down on mobile, see the media
+   * block in injectStyles).
+   */
+  private projection: Projection =
+    typeof window !== "undefined" && window.matchMedia("(max-width: 700px)").matches
+      ? "flat"
+      : "isometric";
   private mode: ActionMode = "idle";
   private plan: Plan = { hasSubmitted: false };
   private pendingPlayerIds: string[] = [];
@@ -144,7 +154,7 @@ export class CombatScreen {
         <div id="cs-header">
           <span id="cs-round">Round 1</span>
           <span id="cs-phase-label">Planning</span>
-          <button id="cs-view-toggle" title="Toggle 2.5D / flat view">⬗ 2.5D</button>
+          <button id="cs-view-toggle" title="Toggle 2.5D / flat view">${this.projection === "isometric" ? "⬗ 2.5D" : "▦ Flat"}</button>
           <span id="cs-waiting"></span>
         </div>
         <div id="cs-body">
@@ -510,9 +520,15 @@ export class CombatScreen {
     for (const k of reachable) range.tiles.add(k);
 
     grid.innerHTML = "";
+    // Track size must match the viewport: 60px tracks read well on desktop,
+    // but 8 of them (+gaps) are ~495px — far wider than a 375px phone. 42px
+    // tracks put the whole flat board on screen with the 40px mobile cells.
+    // (Inline styles beat the stylesheet, so this can't live in the media
+    // query alone.)
+    const track = window.matchMedia("(max-width: 700px)").matches ? 42 : 60;
     grid.style.display              = "grid";
-    grid.style.gridTemplateColumns  = "repeat(8, 60px)";
-    grid.style.gridTemplateRows     = "repeat(8, 60px)";
+    grid.style.gridTemplateColumns  = `repeat(8, ${track}px)`;
+    grid.style.gridTemplateRows     = `repeat(8, ${track}px)`;
     grid.style.gap                  = "2px";
     grid.classList.toggle("cs-iso", this.projection === "isometric");
     // Room-appropriate board palette (e.g. grey stone for the tavern cellar).
@@ -1407,8 +1423,16 @@ export class CombatScreen {
       @media (max-width: 700px) {
         #cs-header { flex-wrap:wrap; gap:8px; padding:6px 10px; font-size:11px; }
         #cs-body { flex-direction:column; gap:8px; padding:8px; }
-        #cs-grid-wrap { flex:1.5; min-height:0; perspective:950px; }
+        #cs-grid-wrap { flex:1.5; min-height:0; perspective:1400px;
+          flex-direction:column; overflow:hidden; }
         #cs-grid { --base-thick:5px; --elev-step:11px; }
+        /* 2.5D on a phone: shrink the whole projection so the 45° diagonal
+           (with its perspective flare) fits the narrow viewport instead of
+           throwing corner tokens off both screen edges. */
+        #cs-grid.cs-iso { transform:scale(.62) rotateX(55deg) rotateZ(45deg); }
+        /* The hint joins the layout flow under the board — as an overlay it
+           covered the player's own spawn row on short screens. */
+        #cs-hint { position:static; margin-top:6px; width:100%; }
         .cs-cell { width:40px; height:40px; }
         .cs-token { width:34px; height:34px; }
         .cs-token-letter { font-size:12px; }
