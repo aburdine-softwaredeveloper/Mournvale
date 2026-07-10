@@ -640,7 +640,8 @@ html, body {
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 #screen-creation {
-  background: var(--color-bg);
+  /* A bare black stage — the tavern keeper speaks out of the dark. */
+  background: #000;
   justify-content: flex-end;
   padding: var(--panel-gap);
   gap: var(--panel-gap);
@@ -648,21 +649,21 @@ html, body {
 
 #creation-bg {
   flex: 1;
-  /* Dark leather scene backdrop with a faint tooled grid. */
-  background:
-    repeating-linear-gradient(
-      0deg, transparent, transparent 31px,
-      rgba(0,0,0,0.12) 31px, rgba(0,0,0,0.12) 32px
-    ),
-    repeating-linear-gradient(
-      90deg, transparent, transparent 31px,
-      rgba(0,0,0,0.12) 31px, rgba(0,0,0,0.12) 32px
-    );
-  background-color: #2a241e;
+  background: #000;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding-top: 16px;
+}
+
+/* The creation panels are wide-short bars — the stretched torn mask erodes
+   them horizontally into ragged shreds (same failure as the header/input
+   bars). Keep them as clean parchment strips like the rest of the chrome. */
+#creation-dialogue-box,
+#creation-choices,
+#creation-input-box {
+  -webkit-mask: none;
+  mask: none;
 }
 
 #creation-scene-label {
@@ -1216,6 +1217,26 @@ html, body {
   padding: 8px 18px;
 }
 
+/* The collapse toggle is a phone-only control — desktop always shows the
+   full command row. */
+#command-toggle {
+  display: none;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--color-text-gold);
+  background: var(--color-btn-bg);
+  border: var(--border-width) solid var(--color-btn-border);
+  padding: 8px 10px;
+  width: 100%;
+  cursor: pointer;
+}
+
+/* Page dots for the mobile swipe layout — desktop shows both pages at once. */
+#spread-dots {
+  display: none;
+}
+
 #command-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -1558,24 +1579,73 @@ html, body {
 
   #game-body {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto 1fr auto;
   }
 
-  /* No open-book spread on a single-column phone layout — stack the pages
-     and drop the desktop gutter/fan chrome (it reads sideways when stacked). */
+  /* The spread becomes a two-page swipe carousel: page 0 is the room view,
+     page 1 the log. Native scroll-snap does the paging; the dots beneath
+     (#spread-dots) track position. The desktop gutter/fan chrome is dropped. */
   #book-spread {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
     padding: 8px;
     border-radius: 8px;
   }
+  #book-spread::-webkit-scrollbar { display: none; }
   #book-binding { display: none; }
   #book-spread > #room-image-panel,
   #book-spread > #log-panel {
+    flex: 0 0 100%;
+    min-width: 100%;
+    min-height: 0;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
     background: var(--color-bg-panel);
     border-radius: 4px;
     box-shadow: inset 0 0 14px rgba(95, 62, 30, 0.15);
     padding: 8px 10px;
+  }
+
+  /* ── Swipe page dots ── */
+
+  #spread-dots {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0 0;
+  }
+  .spread-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    padding: 0;
+    background: var(--color-border);
+    border: 1px solid var(--color-border-light);
+    opacity: 0.45;
+    cursor: pointer;
+  }
+  .spread-dot-active {
+    background: var(--color-text-gold);
+    opacity: 1;
+  }
+  /* A line landed in the log while the room page was showing: the log dot
+     glows oxblood and breathes between full and half strength — it must
+     never vanish entirely or the "second page" affordance is lost. */
+  .spread-dot-unread {
+    background: var(--color-text-error);
+    border-color: var(--color-text-error);
+    animation: dot-unread-pulse 1s steps(2) infinite;
+  }
+  @keyframes dot-unread-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.55; }
   }
 
   /* The details panel must show the room name, exits AND the Here: list —
@@ -1594,17 +1664,16 @@ html, body {
        description to zero height instead of letting the panel scroll. */
     flex-shrink: 0;
   }
-  #room-image-panel { max-height: 30vh; }
-
-  /* The illustration becomes a full-width banner plate (cropped, not
-     letterboxed) so no cream dead-space flanks it on a narrow page.
-     flex-basis (not height) so the flex column can't crush it. */
+  /* The room view owns its whole swipe page now — the illustration fills it
+     (cover-cropped, not letterboxed), which is the point of the carousel:
+     maximum real estate for the art. */
   .room-image {
     aspect-ratio: auto;
     width: 100%;
     max-width: 100%;
     height: auto;
-    flex: 0 0 clamp(80px, 14vh, 150px);
+    flex: 1 1 auto;
+    min-height: 0;
     margin-inline: auto;
   }
   .room-image svg,
@@ -1624,10 +1693,14 @@ html, body {
   .snes-btn { padding: 10px 12px; min-height: 38px; }
   /* Commands pack into a fixed 4-column grid — three tidy rows instead of a
      ragged wall of buttons, reclaiming ~70px of vertical space for the log. */
-  #command-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  #command-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 6px; }
   .cmd-btn  { padding: 8px 2px; font-size: 7px; min-height: 40px; }
   #command-menu { padding: 6px 10px; }
   #command-menu .panel-title { display: none; }
+  /* The command grid hides behind the small toggle strip above the chat bar;
+     GameScreen collapses it by default on phones. */
+  #command-toggle { display: block; min-height: 34px; }
+  #command-menu.cmd-collapsed #command-buttons { display: none; }
   #input-panel  { padding: 8px 10px; }
   .pixel-input  { font-size: 11px; min-height: 34px; }
 

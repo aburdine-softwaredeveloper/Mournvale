@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { QuestManager } from "./QuestManager";
 import { AUTHORED_QUESTS } from "./questData";
 import { NPCS } from "../world/npcs";
+import { LORE_CODEX } from "./loreCodex";
 
 function main(): void {
   const qm = new QuestManager();
@@ -40,6 +41,13 @@ function main(): void {
     assert.ok(q.rumorHint, `${q.id} carries a rumorHint so its lock reads as a thread to pull`);
   }
   console.log("  ok — every required lore key is teachable and every gate has a rumor");
+
+  // Every teachable key must read well in the journal — a bare internal key
+  // leaking into the player's notes means someone forgot the codex entry.
+  for (const key of teachable) {
+    assert.ok(LORE_CODEX[key], `lore key "${key}" has a journal codex entry`);
+  }
+  console.log("  ok — every teachable lore key has a journal entry");
 
   // ── Locked quests are withheld and surfaced as rumors ──────────────────────
   const coldView = qm.buildView(owner, noLore);
@@ -89,7 +97,7 @@ function main(): void {
   }
   console.log("  ok — lore-less callers (tests) are ungated");
 
-  console.log("\n✓ lore gate smoke: 6 checks passed");
+  console.log("\n✓ lore gate smoke: 7 checks passed");
 }
 
 main();

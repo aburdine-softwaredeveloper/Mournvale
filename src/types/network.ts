@@ -226,6 +226,18 @@ export interface QuestBoardMessage {
   payload: QuestBoardView;
 }
 
+/**
+ * The character's journal — every piece of campaign lore they've noted down,
+ * in the order they learned it (see server quest/loreCodex.ts). Sent in
+ * response to the `journal` command; rendered by the client's JournalPanel.
+ */
+export interface JournalMessage {
+  type: "journal";
+  payload: {
+    entries: Array<{ title: string; text: string }>;
+  };
+}
+
 // ── Character / skills screen ──
 
 /** A talent node plus the per-character state the client needs to render it. */
@@ -681,6 +693,7 @@ export type ServerMessage =
   | PartyInviteMessage
   | PartyMemberSheetMessage
   | QuestBoardMessage
+  | JournalMessage
   | SkillScreenMessage
   | InventoryScreenMessage
   | ShopScreenMessage

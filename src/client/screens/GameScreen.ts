@@ -113,6 +113,11 @@ export class GameScreen {
    */
   private expandedNpcId: string | null = null;
 
+  // Mobile swipe layout: the book-spread scrolls horizontally between the
+  // room view (page 0) and the log (page 1); the dots reflect the position.
+  private readonly bookSpread: HTMLElement;
+  private readonly spreadDots: HTMLElement[];
+
   constructor() {
     this.headerName     = this.requireEl("player-name-display");
     this.headerClass    = this.requireEl("player-class-display");
@@ -153,7 +158,14 @@ export class GameScreen {
     this.talentTreePanel.setCommandHandler((cmd) => this.send(cmd));
     this.abilityListPanel.setCommandHandler((cmd) => this.send(cmd));
 
+    this.bookSpread = this.requireEl("book-spread");
+    this.spreadDots = Array.from(
+      document.querySelectorAll<HTMLElement>("#spread-dots .spread-dot")
+    );
+
     this.wireInput();
+    this.wireCommandToggle();
+    this.wireSpreadSwipe();
   }
 
   // ─────────────────────────────────────────────
@@ -300,7 +312,77 @@ export class GameScreen {
     this.messageLog.appendChild(entry);
     this.messageLog.scrollTop = this.messageLog.scrollHeight;
 
+    this.markLogUnread();
     this.maybeDismissPortraitsForLog(text, kind);
+  }
+
+  // ─────────────────────────────────────────────
+  // MOBILE CHROME — command toggle + swipe pages
+  // ─────────────────────────────────────────────
+
+  /**
+   * Collapses the command grid behind the small toggle strip on phones so the
+   * room illustration keeps the screen. Desktop never collapses (the toggle is
+   * display:none there and the collapsed rule lives inside the media query).
+   */
+  private wireCommandToggle(): void {
+    const menu   = document.getElementById("command-menu");
+    const toggle = document.getElementById("command-toggle");
+    if (!menu || !toggle) return;
+
+    if (window.matchMedia("(max-width: 700px)").matches) {
+      menu.classList.add("cmd-collapsed");
+    }
+
+    const paint = () => {
+      const collapsed = menu.classList.contains("cmd-collapsed");
+      toggle.textContent = collapsed ? "COMMANDS ▴" : "COMMANDS ▾";
+      toggle.setAttribute("aria-expanded", String(!collapsed));
+    };
+    toggle.addEventListener("click", () => {
+      menu.classList.toggle("cmd-collapsed");
+      paint();
+    });
+    paint();
+  }
+
+  /** True when the spread is in the horizontal swipe layout (phone widths). */
+  private spreadIsSwipeable(): boolean {
+    return this.bookSpread.scrollWidth > this.bookSpread.clientWidth + 10;
+  }
+
+  private spreadPage(): number {
+    return Math.round(this.bookSpread.scrollLeft / this.bookSpread.clientWidth);
+  }
+
+  /** Keeps the page dots in sync with swipes and makes them tappable. */
+  private wireSpreadSwipe(): void {
+    if (this.spreadDots.length === 0) return;
+
+    const paint = () => {
+      const page = this.spreadPage();
+      this.spreadDots.forEach((dot, i) => {
+        dot.classList.toggle("spread-dot-active", i === page);
+        if (i === page) dot.classList.remove("spread-dot-unread");
+      });
+    };
+
+    this.bookSpread.addEventListener("scroll", paint, { passive: true });
+    this.spreadDots.forEach((dot, i) => {
+      dot.addEventListener("click", () => {
+        this.bookSpread.scrollTo({
+          left: i * this.bookSpread.clientWidth,
+          behavior: "smooth",
+        });
+      });
+    });
+  }
+
+  /** Pulses the log dot when a line arrives while the log page is off-screen. */
+  private markLogUnread(): void {
+    const logDot = this.spreadDots[1];
+    if (!logDot || !this.spreadIsSwipeable()) return;
+    if (this.spreadPage() === 0) logDot.classList.add("spread-dot-unread");
   }
 
   /**

@@ -81,18 +81,21 @@ git checkout <last-good-commit-or-tag>
 | **Back up saves** | `cp -r saves ~/Backups/mournvale-saves-$(date +%F)` | Before risky changes; periodically |
 | Update deps | `npm audit` · `npm outdated` | Occasionally, especially before public hosting |
 
-### ⚠ One-time step still outstanding: survive reboots
+### ✓ Reboot survival — DONE (2026-07-09, user LaunchAgent)
 
-`pm2 save` is done by every deploy, but PM2 itself is not yet registered to
-launch at boot on this Mac. Run once:
+A LaunchAgent at `~/Library/LaunchAgents/io.keymetrics.PM2.plist` runs
+`pm2 resurrect` **when aburdine logs in** after a reboot, restoring whatever
+`pm2 save` last snapshotted (every deploy runs `pm2 save`; it was also run when
+the agent was installed). Its output lands in `~/.pm2/launchd-resurrect.log`.
 
-```bash
-pm2 startup
-# …then copy-paste and run the sudo command it prints
-```
-
-Until you do this, a machine reboot means the game is down until you manually
-run `pm2 resurrect` (or `./scripts/deploy.sh`).
+Notes:
+- **Login, not boot**: a user LaunchAgent fires at login. If this Mac auto-logs
+  in (or you log in after rebooting), the game comes back on its own. For a
+  true boot-time daemon (server up at the login screen, no login needed), run
+  the sudo command printed by `pm2 startup` once — it installs a root
+  LaunchDaemon and supersedes the agent.
+- After changing the PM2 process list, run `pm2 save` so the snapshot matches.
+- To verify the agent: `launchctl print gui/$(id -u)/io.keymetrics.PM2`.
 
 ---
 

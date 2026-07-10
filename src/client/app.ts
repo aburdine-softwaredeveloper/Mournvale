@@ -37,6 +37,7 @@ import { setMusic } from "./util/music";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { InventoryPanel } from "./components/InventoryPanel";
 import { MapPanel } from "./components/MapPanel";
+import { JournalPanel } from "./components/JournalPanel";
 import { MemberSheetPanel } from "./components/MemberSheetPanel";
 import { ShopPanel } from "./components/ShopPanel";
 import { InvitePrompt } from "./components/InvitePrompt";
@@ -84,6 +85,7 @@ class MournvaleClient {
   private readonly questBoard = new QuestBoard();
   private readonly inventoryPanel = new InventoryPanel();
   private readonly mapPanel = new MapPanel();
+  private readonly journalPanel = new JournalPanel();
   private readonly shopPanel = new ShopPanel();
   private readonly invitePrompt = new InvitePrompt();
   private readonly settingsPanel = new SettingsPanel();
@@ -391,6 +393,10 @@ class MournvaleClient {
         this.memberSheetPanel.show(msg.payload.sheet, msg.payload.gearSummary);
         break;
 
+      case "journal":
+        this.journalPanel.show(msg.payload.entries);
+        break;
+
       case "quest_board":
         // Always refresh the contents; only OPEN the modal when the player
         // asked for it (or it's already up). Background refreshes stay silent.
@@ -588,6 +594,16 @@ class MournvaleClient {
         // Pure client popup — the painted town survey with a "you are here"
         // pin driven by the last room message's artKey.
         this.mapPanel.toggle(this.currentRoomArt);
+        return;
+
+      case "journal":
+      case "notes":
+        // Toggle: close locally if open, else ask the server for the entries.
+        if (this.journalPanel.isOpen()) {
+          this.journalPanel.hide();
+        } else {
+          this.send({ type: "command", payload: { input: "journal" } });
+        }
         return;
 
       case "leave":
