@@ -42,6 +42,16 @@ previously reused another room's tile — fixed).
 All tiles are greyscale placeholders (diagonal-X pattern). Highest-priority
 originals: `fog_road` and `fogheart` (the boss approach), then `cellar`.
 
+### Town Map — `public/assets/ui/town_map.png` ✅
+
+The painted overhead survey of Mournvale shown by the **Map [M]** popup
+(`src/client/components/MapPanel.ts`). Source art lives in `img/town_map.jpg`
+(1408×768); `node scripts/make-town-map.mjs` regrades it into the same sepia
+page/ink duotone as the room tiles (same ramp/vignette/frame as
+`make-room-tiles.mjs`) — re-run it whenever the source changes. The popup's
+"you are here" pin coordinates live in `MapPanel.ts` (`PLACES`, keyed by room
+artKey, as percentages of the image).
+
 ---
 
 ## 2. Character-Creation Portraits — `public/assets/characters/portraits/`

@@ -6,16 +6,16 @@
   "directories": {
     "doc": "docs"
   },
-"scripts": {
-  "dev:server": "PORT=${PORT:-3001} tsx watch src/server/index.ts",
-  "dev:client": "vite",
-  "dev": "concurrently -n SERVER,CLIENT -c green,blue \"npm run dev:server\" \"npm run dev:client\"",
-  "build:client": "vite build",
-  "build": "npm run build:client",
-  "start": "tsx src/server/index.ts",
-  "typecheck": "tsc --noEmit",
-  "test": "node scripts/run-smoke.mjs"
-},
+  "scripts": {
+    "dev:server": "PORT=${PORT:-3001} tsx watch src/server/index.ts",
+    "dev:client": "vite",
+    "dev": "concurrently -n SERVER,CLIENT -c green,blue \"npm run dev:server\" \"npm run dev:client\"",
+    "build:client": "vite build",
+    "build": "npm run build:client",
+    "start": "tsx src/server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/run-smoke.mjs"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aburdine-softwaredeveloper/Mournvale.git"
@@ -29,7 +29,6 @@
   },
   "homepage": "https://github.com/aburdine-softwaredeveloper/Mournvale#readme",
   "dependencies": {
-    "express": "^5.2.1",
     "ws": "^8.21.0"
   },
   "devDependencies": {

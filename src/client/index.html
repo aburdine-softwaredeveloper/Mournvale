@@ -215,14 +215,24 @@
 
       </div>
 
+      <!-- Page dots for the mobile swipe layout: view ⟷ log. Hidden on
+           desktop where both pages sit side by side. -->
+      <div id="spread-dots" role="tablist" aria-label="Page">
+        <button class="spread-dot spread-dot-active" type="button" aria-label="Room view"></button>
+        <button class="spread-dot" type="button" aria-label="Log"></button>
+      </div>
+
     </div>
 
     <!-- Bottom bar: command menu + input -->
     <div id="game-footer">
 
-      <!-- Command buttons — clickable shortcuts -->
+      <!-- Command buttons — clickable shortcuts. On phones the grid is
+           collapsed behind the small toggle strip so the room art keeps
+           the screen; the toggle is hidden on desktop. -->
       <div id="command-menu" class="snes-panel">
         <div class="panel-title">◆ COMMANDS</div>
+        <button id="command-toggle" type="button" aria-expanded="true">COMMANDS ▾</button>
         <div id="command-buttons"></div>
       </div>
 

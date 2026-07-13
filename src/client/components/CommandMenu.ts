@@ -36,6 +36,7 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   { command: "say",   label: "Speak", shortcut: "t", needsArgument: true },
   { command: "quests", label: "Quests", shortcut: "q" },
   { command: "map",    label: "Map",    shortcut: "m" },
+  { command: "journal", label: "Journal", shortcut: "j" },
   { command: "skills", label: "Skills", shortcut: "c" },
   { command: "inventory", label: "Bag", shortcut: "i" },
   { command: "help",  label: "Help",  shortcut: "h" },

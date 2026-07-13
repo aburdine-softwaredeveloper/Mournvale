@@ -36,6 +36,8 @@ import { QuestBoard } from "./components/QuestBoard";
 import { setMusic } from "./util/music";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { InventoryPanel } from "./components/InventoryPanel";
+import { MapPanel } from "./components/MapPanel";
+import { JournalPanel } from "./components/JournalPanel";
 import { MemberSheetPanel } from "./components/MemberSheetPanel";
 import { ShopPanel } from "./components/ShopPanel";
 import { InvitePrompt } from "./components/InvitePrompt";
@@ -82,6 +84,8 @@ class MournvaleClient {
   private readonly game = new GameScreen();
   private readonly questBoard = new QuestBoard();
   private readonly inventoryPanel = new InventoryPanel();
+  private readonly mapPanel = new MapPanel();
+  private readonly journalPanel = new JournalPanel();
   private readonly shopPanel = new ShopPanel();
   private readonly invitePrompt = new InvitePrompt();
   private readonly settingsPanel = new SettingsPanel();
@@ -98,6 +102,9 @@ class MournvaleClient {
 
   /** This browser's persistent player identity (from localStorage) */
   private playerId: string = "";
+
+  /** artKey of the current room, kept for the town map's "you are here" pin. */
+  private currentRoomArt: string | null = null;
 
   // ── Phase 3 — Combat ──────────────────────────────────────────────────────
 
@@ -344,6 +351,7 @@ class MournvaleClient {
         break;
 
       case "room":
+        this.currentRoomArt = msg.payload.artKey ?? null;
         this.game.updateRoom(msg);
         break;
 
@@ -383,6 +391,10 @@ class MournvaleClient {
 
       case "party_member_sheet":
         this.memberSheetPanel.show(msg.payload.sheet, msg.payload.gearSummary);
+        break;
+
+      case "journal":
+        this.journalPanel.show(msg.payload.entries);
         break;
 
       case "quest_board":
@@ -576,6 +588,22 @@ class MournvaleClient {
       case "options":
         // Pure client preference panel — never touches the server.
         this.settingsPanel.show();
+        return;
+
+      case "map":
+        // Pure client popup — the painted town survey with a "you are here"
+        // pin driven by the last room message's artKey.
+        this.mapPanel.toggle(this.currentRoomArt);
+        return;
+
+      case "journal":
+      case "notes":
+        // Toggle: close locally if open, else ask the server for the entries.
+        if (this.journalPanel.isOpen()) {
+          this.journalPanel.hide();
+        } else {
+          this.send({ type: "command", payload: { input: "journal" } });
+        }
         return;
 
       case "leave":

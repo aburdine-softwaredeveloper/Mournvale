@@ -41,6 +41,7 @@ import type { SaveStore } from "./persistence/SaveStore";
 import { PartyManager } from "./party/PartyManager";
 import { QuestManager } from "./quest/QuestManager";
 import { EPILOGUE_SCENES } from "./quest/epilogue";
+import { loreEntryFor } from "./quest/loreCodex";
 import { worldManager } from "./world/WorldManager";
 import { TOWN_CODEX } from "./world/townCodex";
 import { combatManager, buildPlayerCombatEntity, buildEnemyFromTemplate } from "./combat/CombatManager";
@@ -101,7 +102,9 @@ const PORT = Number(process.env["PORT"]) || 3000;
  */
 const CLIENT_DIR = path.resolve(process.cwd(), "dist/client");
 const httpServer = createServer(createStaticHandler(CLIENT_DIR));
-const server = new WebSocketServer({ server: httpServer });
+// maxPayload: the largest legitimate client message is a chat command of a few
+// hundred bytes — ws's 100 MiB default would let one client exhaust memory.
+const server = new WebSocketServer({ server: httpServer, maxPayload: 16 * 1024 });
 
 const saveStore: SaveStore = new JsonFileSaveStore();
 const partyManager = new PartyManager();
@@ -134,6 +137,58 @@ const SPEAK_INTENT_VERBS: Record<string, TalkIntent> = {
  * combat (each player gets a personalised CombatStateView).
  */
 const playerSockets = new Map<string, WebSocket>();
+
+// ─────────────────────────────────────────────
+// ABUSE GUARDS (docs/SECURITY.md — M1)
+// ─────────────────────────────────────────────
+
+/** Longest raw message accepted, in characters — everything real fits well
+ * under this; anything bigger is dropped with a notice. */
+const MAX_MESSAGE_CHARS = 2000;
+
+/** Token bucket per socket: a short burst is fine (button mashing), but the
+ * sustained rate is capped so one client can't flood the server. */
+const RATE_BURST = 12;
+const RATE_REFILL_PER_SEC = 6;
+
+/** Minimum gap between LLM-backed NPC conversations per player — Ollama is
+ * CPU-bound, so chat spam is the cheapest way to burn the host. */
+const NPC_CHAT_COOLDOWN_MS = 2500;
+
+interface RateState { tokens: number; last: number; warnedAt: number; }
+const rateStates = new WeakMap<WebSocket, RateState>();
+
+/** When each player last started an LLM conversation (keyed by the Player
+ * object itself so entries die with the session). */
+const npcChatStartedAt = new WeakMap<Player, number>();
+
+/**
+ * Refills and spends one token from the socket's bucket. Returns false (and
+ * tells the player, at most once a second) when the bucket is empty — the
+ * message is simply dropped, which starves a flood without punishing play.
+ */
+function allowMessage(socket: WebSocket): boolean {
+  const now = Date.now();
+  let s = rateStates.get(socket);
+  if (!s) {
+    s = { tokens: RATE_BURST, last: now, warnedAt: 0 };
+    rateStates.set(socket, s);
+  }
+  s.tokens = Math.min(RATE_BURST, s.tokens + ((now - s.last) / 1000) * RATE_REFILL_PER_SEC);
+  s.last = now;
+  if (s.tokens >= 1) {
+    s.tokens -= 1;
+    return true;
+  }
+  if (now - s.warnedAt > 1000) {
+    s.warnedAt = now;
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: "Easy, traveler — the town can only listen so fast." },
+    });
+  }
+  return false;
+}
 
 /** Every non-internal IPv4 address this machine has — the URLs LAN players use. */
 function lanUrls(port: number): string[] {
@@ -222,13 +277,29 @@ server.on("connection", (socket: WebSocket) => {
   // MESSAGE HANDLER
   // ─────────────────────────────────────────────
 
+  // A misbehaving client (oversized frame past maxPayload, protocol error)
+  // emits 'error' on its socket; without a listener that would crash the
+  // whole process. Log it and let the paired 'close' do the cleanup.
+  socket.on("error", (err) => {
+    const p = players.get(socket);
+    console.error(`[ws] socket error for ${p?.tempName ?? "unknown"}:`, err.message);
+  });
+
   socket.on("message", (raw: RawData) => {
     const currentPlayer = players.get(socket);
     if (!currentPlayer) return;
 
+    if (!allowMessage(socket)) return;
+
+    const text = raw.toString();
+    if (text.length > MAX_MESSAGE_CHARS) {
+      sendToPlayer(socket, { type: "system", payload: { message: "That message is too long." } });
+      return;
+    }
+
     let msg: ClientMessage;
     try {
-      msg = JSON.parse(raw.toString()) as ClientMessage;
+      msg = JSON.parse(text) as ClientMessage;
     } catch {
       sendToPlayer(socket, { type: "system", payload: { message: "Invalid message format." } });
       return;
@@ -383,6 +454,20 @@ function handleIdentify(player: Player, socket: WebSocket, playerId: string): vo
     sendToPlayer(socket, { type: "system", payload: { message: "Invalid player identity." } });
     return;
   }
+
+  // One live socket per identity (docs/SECURITY.md — M2). playerId is a
+  // bearer token, so a second connection claiming it would silently hijack
+  // the playerSockets routing entry of whoever is already playing.
+  const existing = playerSockets.get(trimmed);
+  if (existing && existing !== socket && existing.readyState === WebSocket.OPEN) {
+    console.warn(`[id] rejected duplicate identify for ${trimmed} (already connected)`);
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: "This character is already playing in another window. Close it first, then reload." },
+    });
+    return;
+  }
+
   player.playerId = trimmed;
   playerSockets.set(trimmed, socket);
   console.log(`[id] ${player.tempName} identified as ${trimmed}`);
@@ -604,6 +689,8 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
       if (handleInventoryCommand(player, socket, msg.payload.input)) return;
       // `shop`/`trade`/`buy`/`sell` opens the room's vendor stall, if one's here.
       if (handleShopCommand(player, socket, msg.payload.input)) return;
+      // `journal`/`notes`/`lore` opens the campaign journal of learned lore.
+      if (handleJournalCommand(player, socket, msg.payload.input)) return;
 
       const roomBefore = player.roomId;
       const response = handleCommand(player.id, msg.payload.input);
@@ -673,6 +760,11 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
 
     case "combat_submit_action":
       handleCombatSubmitAction(player, socket, msg.payload.combatId, msg.payload.submission);
+      return;
+
+    // A double-tap on the final creation choice can land after the player has
+    // already gone active — stale, harmless, and not worth an error line.
+    case "dialogue_choice":
       return;
 
     default:
@@ -982,6 +1074,18 @@ function runNpcChat(
   message: string,
   explicitIntent?: TalkIntent
 ): void {
+  // Ollama is CPU-bound — space out each player's conversations so chat spam
+  // can't stack up expensive LLM work (docs/SECURITY.md — M1).
+  const lastStart = npcChatStartedAt.get(player) ?? 0;
+  if (Date.now() - lastStart < NPC_CHAT_COOLDOWN_MS) {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: `${npc.name} is still weighing your last words.` },
+    });
+    return;
+  }
+  npcChatStartedAt.set(player, Date.now());
+
   const charClass = player.character!.characterClass;
   // An explicit action verb (persuade/intimidate/…) overrides inference;
   // otherwise the approach is read from the player's own words.
@@ -1458,23 +1562,34 @@ function maybeCompleteRoomQuest(player: Player, roomId: string): void {
  * completion path (combat clear, field turn-in, delivery).
  *
  * Co-op: when the quest was held by a party (ownerKey is a party id), every
- * online party member receives the full reward XP — not just the player who
- * struck the final blow or made the turn-in. Solo quests reward only the
- * acting player.
+ * party member standing in the room shares the full reward — combat pulls the
+ * whole party in (pullPartyMembersIntoRoom), so fighters always qualify.
+ * A member idling elsewhere gets a notice instead of a free reward. Solo
+ * quests reward only the acting player.
  */
 function grantQuestCompletion(player: Player, ownerKey: string): void {
   const active = questManager.complete(ownerKey);
   if (!active) return;
   const reward = active.quest.reward;
 
-  // Resolve the reward recipients: the whole party for a party quest, else
-  // just the acting player. Party members are tracked by session id.
-  const recipients = partyManager.getPartyId(player.id)
+  // Reward the party members who were actually there — same room as the
+  // completer. Members are tracked by session id.
+  const partyMembers = partyManager.getPartyId(player.id)
     ? partyManager
         .getPartyMemberIds(player.id)
         .map((id) => getPlayerById(id))
         .filter((p): p is Player => p !== undefined)
     : [player];
+  const recipients = partyMembers.filter((p) => p.roomId === player.roomId);
+
+  // Absent members still learn the job is done (their board changed too).
+  for (const absent of partyMembers.filter((p) => p.roomId !== player.roomId)) {
+    sendToPlayer(absent.socket, {
+      type: "system",
+      payload: { message: `Your party finished "${active.quest.title}" — but you were elsewhere when the reward was shared.` },
+    });
+    sendQuestBoard(absent, absent.socket);
+  }
 
   const rewardLine =
     `Quest complete — ${active.quest.title}! ` +
@@ -2066,9 +2181,39 @@ function questOwnerKey(player: Player): string {
   return partyManager.getPartyId(player.id) ?? player.id;
 }
 
+/**
+ * `journal` / `notes` / `lore` — sends the character's journal: every lore
+ * key they've personally learned, rendered through the codex in the order
+ * learned. Personal by design (unlike quest gating, which unions the party):
+ * the journal is what YOUR character wrote down.
+ */
+function handleJournalCommand(player: Player, socket: WebSocket, input: string): boolean {
+  const verb = input.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (verb !== "journal" && verb !== "notes" && verb !== "lore") return false;
+
+  const entries = (player.lore ?? []).map(loreEntryFor);
+  sendToPlayer(socket, { type: "journal", payload: { entries } });
+  return true;
+}
+
 /** The lore this character has learned, as a set for the quest-gating checks. */
 function knownLoreOf(player: Player): ReadonlySet<string> {
   return new Set(player.lore ?? []);
+}
+
+/**
+ * A party shares its campaign knowledge: the union of every online member's
+ * lore. One member learning of the wolves is enough for the whole party to see
+ * (and accept) the quest — otherwise each friend had to re-earn every story
+ * beat before they could play it together. Solo players get just their own.
+ */
+function partyLoreOf(player: Player): ReadonlySet<string> {
+  const union = new Set(player.lore ?? []);
+  for (const id of partyManager.getPartyMemberIds(player.id)) {
+    const member = getPlayerById(id);
+    for (const key of member?.lore ?? []) union.add(key);
+  }
+  return union;
 }
 
 /**
@@ -2115,14 +2260,15 @@ function maybeGrantMeetLore(player: Player, npc: NPC): void {
 }
 
 function sendQuestBoard(player: Player, socket: WebSocket): void {
-  const view = questManager.buildView(questOwnerKey(player), knownLoreOf(player));
+  // Party lore union: any member's knowledge unlocks the posting for all.
+  const view = questManager.buildView(questOwnerKey(player), partyLoreOf(player));
   sendToPlayer(socket, { type: "quest_board", payload: view });
 }
 
 function handleQuestAccept(player: Player, socket: WebSocket, questId: string): void {
   const partyId  = partyManager.getPartyId(player.id);
   const ownerKey = partyId ?? player.id;
-  const error    = questManager.accept(ownerKey, questId, partyId !== null, partyId, knownLoreOf(player));
+  const error    = questManager.accept(ownerKey, questId, partyId !== null, partyId, partyLoreOf(player));
 
   if (error) {
     sendToPlayer(socket, { type: "system", payload: { message: error } });
