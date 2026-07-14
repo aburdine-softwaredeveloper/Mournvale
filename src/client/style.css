@@ -763,6 +763,27 @@ html, body {
   color: var(--color-cursor);
 }
 
+/* Choices with a blurb (class picks) stack label over description. */
+.choice-item .choice-label { display: block; }
+.choice-item .choice-desc {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-serif, serif);
+  font-size: 11px;
+  font-style: italic;
+  opacity: 0.8;
+  max-width: 300px;
+  line-height: 1.35;
+}
+
+/* Empty-name nudge: a quick shake so a blank OK never feels ignored. */
+@keyframes input-nudge {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+.input-nudge { animation: input-nudge 0.18s ease-in-out 2; }
+
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    GAME SCREEN
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -832,6 +853,18 @@ html, body {
   color: var(--color-text-dim);
   font-size: 8px;
   letter-spacing: 1px;
+}
+
+/* Out-of-combat vitals: wounds persist between fights, so the header always
+   shows current HP. Turns oxblood when badly hurt (rest or drink a potion). */
+#player-hp-display {
+  color: var(--color-text-dim);
+  font-size: 8px;
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+#player-hp-display.hp-low {
+  color: #8a3b2a;
 }
 
 /* â”€â”€ Body â”€â”€ */

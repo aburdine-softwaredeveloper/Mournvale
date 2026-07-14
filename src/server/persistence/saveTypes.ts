@@ -58,6 +58,12 @@ export interface SaveData {
    * parse; SaveStore.load backfills an empty list when missing.
    */
   lore?: string[];
+  /**
+   * Current hit points at save time — wounds persist between sessions. Optional
+   * and additive: a missing value simply means unhurt (full HP), so older saves
+   * need no migration and no version bump.
+   */
+  hp?: number;
   /** Unix timestamp (ms) of when this save was written */
   savedAt: number;
 }

@@ -54,7 +54,12 @@ export const SKILL_ABILITY: Record<Skill, AbilityScore> = {
 
 // ─── Conditions ───────────────────────────────────────────────────────────────
 
-export type Condition = "poisoned" | "stunned" | "blinded" | "prone" | "burning";
+export type Condition =
+  | "poisoned" | "stunned" | "blinded" | "prone" | "burning"
+  /** Attacked recklessly — incoming attacks have advantage until the entity next acts. */
+  | "reckless"
+  /** Took the dodge action — incoming attacks have disadvantage until the entity next acts. */
+  | "dodging";
 
 // ─── Weapons ──────────────────────────────────────────────────────────────────
 
@@ -63,7 +68,7 @@ export interface Weapon {
   name: string;
   /** Dice notation, e.g. "1d8", "2d6", "1d4+1" */
   damageDice: string;
-  /** Tile range (1 = melee only, >1 = ranged Manhattan distance) */
+  /** Tile range (1 = melee; board distance where diagonals count as 1) */
   range: number;
   /** Which ability score drives the attack and damage rolls */
   abilityScore: AbilityScore;
@@ -85,7 +90,8 @@ export interface ClassAbility {
   type: "passive" | "active";
   targetType?: "self" | "enemy" | "ally";
   /**
-   * Tile range (Manhattan) at which this ability can reach a target. Optional —
+   * Tile range (board distance, diagonals count as 1) at which this ability can
+   * reach a target. Optional —
    * see abilityRange() for the default (self abilities ignore range; offensive
    * abilities default to your weapon's reach; support defaults to a short throw).
    * Set explicitly only when an ability's reach differs from that default, e.g. a

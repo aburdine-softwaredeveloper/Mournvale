@@ -29,6 +29,22 @@ export class QuestBoard {
       this.hide();
       this.onClose?.();
     });
+
+    // Esc closes the board, same as the map/bag/journal panels.
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.isOpen()) {
+        this.hide();
+        this.onClose?.();
+      }
+    });
+
+    // Clicking the dimmed backdrop (not the board itself) closes too.
+    this.overlay.addEventListener("click", (e) => {
+      if (e.target === this.overlay) {
+        this.hide();
+        this.onClose?.();
+      }
+    });
   }
 
   /** Registers callbacks for accept/abandon/close. */

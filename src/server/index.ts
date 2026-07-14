@@ -55,7 +55,7 @@ import type { TalkIntent, NPC } from "../types/npc";
 import type { Player } from "../types/game";
 import type { CharacterClass, Skill } from "../types/character";
 import { buildCharacterStats } from "../types/character";
-import { rollSkillCheck, type CheckTier } from "./skills/SkillEngine";
+import { rollSkillCheck, rollDice, type CheckTier } from "./skills/SkillEngine";
 import { NpcChatService } from "./dialogue/NpcChatService";
 import { OllamaBrain } from "./dialogue/OllamaBrain";
 import { ScriptedBrain } from "./dialogue/ScriptedBrain";
@@ -69,7 +69,8 @@ import {
   rumorMill, rumorInfluence, clampReputation, buildRumorContext,
 } from "./social/rumors";
 import {
-  newInventory, addItem, itemById, itemByName, equip, unequip, buy, sell, sellValue,
+  newInventory, addItem, removeItem, itemById, itemByName, equip, unequip, buy, sell, sellValue,
+  equipmentBonusHp,
 } from "../types/items";
 import type { ItemSlot } from "../types/items";
 import { buildInventoryView, buildShopView } from "./character/inventoryScreen";
@@ -78,7 +79,7 @@ import { vendorPrice } from "./world/vendor";
 /** Gold a freshly-created character starts with. */
 const STARTING_GOLD = 50;
 import {
-  newProgression, awardXp, levelForXp,
+  newProgression, awardXp, levelForXp, talentBonusHp,
   spendTalentPoint, spendAttributePoint, equipAbility, unequipSlot, ABILITY_SLOTS,
 } from "../types/progression";
 import { CLASS_TALENT_TREES } from "../types/talents";
@@ -345,7 +346,7 @@ server.on("connection", (socket: WebSocket) => {
       currentPlayer.playerId &&
       currentPlayer.activeSlot
     ) {
-      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId, currentPlayer.progression, currentPlayer.social, currentPlayer.inventory, currentPlayer.lore);
+      const data = buildSaveData(currentPlayer.character, currentPlayer.roomId, currentPlayer.progression, currentPlayer.social, currentPlayer.inventory, currentPlayer.lore, currentPlayer.hp);
       const { playerId, activeSlot } = currentPlayer;
       saveStore
         .save(playerId, activeSlot, data)
@@ -424,6 +425,7 @@ server.on("connection", (socket: WebSocket) => {
     // everyone still standing in the room they left.
     if (currentPlayer.state === "active") {
       refreshRoomOccupants(currentPlayer.roomId);
+      if (currentPlayer.roomId) maybeRespawnEmptyRoom(currentPlayer.roomId);
     }
 
     if (partyResult.disbanded) {
@@ -522,6 +524,8 @@ async function handleMenuMessage(
       player.social      = data.social ?? newSocialMemory();
       player.inventory   = data.inventory ?? newInventory();
       player.lore        = data.lore ?? [];
+      // Wounds persist between sessions; an absent value means unhurt.
+      if (data.hp !== undefined) player.hp = data.hp;
       player.roomId      = rooms[data.roomId] ? data.roomId : "tavern";
       player.state       = "active";
 
@@ -543,6 +547,7 @@ async function handleMenuMessage(
       }, player.id);
       refreshRoomOccupants(player.roomId, player.id);
       sendToPlayer(socket, { type: "system", payload: { message: `Welcome back, ${data.character.name}.` } });
+      sendHpUpdate(player);
       console.log(`[load] ${data.character.name} loaded from slot ${slot} into ${player.roomId}.`);
       return;
     }
@@ -640,16 +645,26 @@ function handleCreationMessage(player: Player, socket: WebSocket, msg: ClientMes
         payload: { playerName: character.name, event: "entered" },
       }, player.id);
       refreshRoomOccupants("tavern", player.id);
+      // Land the welcome in the game log ("dialogue" messages render into the
+      // creation screen, which is gone by now) and follow it with a first-steps
+      // nudge so a fresh player knows where the game starts.
       sendToPlayer(socket, {
-        type: "dialogue",
+        type: "chat",
         payload: {
           speaker: "Aldric the Barkeep",
-          text: `Welcome to Mournvale, ${character.name}. Watch yourself out there. The fog's been thicker than usual.`,
+          message: `Welcome to Mournvale, ${character.name}. Watch yourself out there. The fog's been thicker than usual.`,
         },
       });
+      sendToPlayer(socket, {
+        type: "system",
+        payload: {
+          message: "The barkeep looks like he has work for you. Check the quest board with Quests [Q], talk to folk with Speak [T], and press Help [H] any time.",
+        },
+      });
+      sendHpUpdate(player);
 
       if (player.playerId && player.activeSlot) {
-        const data = buildSaveData(character, player.roomId, player.progression, player.social, player.inventory, player.lore);
+        const data = buildSaveData(character, player.roomId, player.progression, player.social, player.inventory, player.lore, player.hp);
         const { playerId, activeSlot } = player;
         saveStore
           .save(playerId, activeSlot, data)
@@ -691,6 +706,8 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
       if (handleShopCommand(player, socket, msg.payload.input)) return;
       // `journal`/`notes`/`lore` opens the campaign journal of learned lore.
       if (handleJournalCommand(player, socket, msg.payload.input)) return;
+      // `rest`/`sleep` heals to full where there's a safe bed (the tavern).
+      if (handleRestCommand(player, socket, msg.payload.input)) return;
 
       const roomBefore = player.roomId;
       const response = handleCommand(player.id, msg.payload.input);
@@ -704,6 +721,9 @@ function handleActiveMessage(player: Player, socket: WebSocket, msg: ClientMessa
         if (player.roomId !== roomBefore) {
           refreshRoomOccupants(roomBefore, player.id);
           refreshRoomOccupants(player.roomId, player.id);
+          // A cleared room refills the moment its last player walks out, so
+          // stepping out and back in is a reliable XP grind loop.
+          if (roomBefore) maybeRespawnEmptyRoom(roomBefore);
         }
         // Entering a room may satisfy a non-combat quest's field objective.
         maybeAdvanceFieldQuest(player);
@@ -1249,6 +1269,38 @@ function pullPartyMembersIntoRoom(roomId: string): void {
  * all players and the hostile NPCs on the grid, then sends a personalised
  * combat_start to every player.
  */
+/** Base hit points every adventurer has before talents and gear add theirs. */
+const BASE_PLAYER_HP = 30;
+
+/**
+ * A character's full hit points OUT of combat — the same math combat uses
+ * (base + talent passives + equipped-gear bonuses), so the world and the
+ * battlefield never disagree about how healthy "healthy" is.
+ */
+function playerMaxHp(player: Player): number {
+  let max = BASE_PLAYER_HP;
+  if (player.progression && player.character) {
+    const tree = CLASS_TALENT_TREES[player.character.characterClass as CharacterClass];
+    max += talentBonusHp(player.progression, tree);
+  }
+  if (player.inventory) max += equipmentBonusHp(player.inventory);
+  return max;
+}
+
+/** Current HP, clamped to [1, max]. Undefined means unhurt (full). */
+function playerCurrentHp(player: Player): number {
+  const max = playerMaxHp(player);
+  return Math.max(1, Math.min(player.hp ?? max, max));
+}
+
+/** Keep the client's header HP readout truthful. */
+function sendHpUpdate(player: Player): void {
+  sendToPlayer(player.socket, {
+    type: "hp_update",
+    payload: { hp: playerCurrentHp(player), maxHp: playerMaxHp(player) },
+  });
+}
+
 export function triggerCombat(roomId: string): void {
   const hostileNpcs = worldManager.getHostileNpcsInRoom(roomId);
   if (!hostileNpcs.length) return;
@@ -1272,8 +1324,10 @@ export function triggerCombat(roomId: string): void {
       playerId:       p.playerId!,
       name:           p.character?.name ?? "Adventurer",
       characterClass: (p.character?.characterClass ?? "Warrior") as CharacterClass,
-      hp:             30,
+      hp:             BASE_PLAYER_HP,
       position:       { x: i % 8, y: 7 - Math.floor(i / 8) },
+      // Wounds persist: whoever walks in hurt, fights hurt.
+      currentHp:      playerCurrentHp(p),
       ...(p.progression && { progression: p.progression }),
       ...(p.inventory && { inventory: p.inventory }),
     })
@@ -1317,6 +1371,21 @@ function handleCombatSubmitAction(
     return;
   }
 
+  // Using an item spends it from the real pack at submit time — the effect
+  // lands at the player's slot in the initiative order (CombatManager keeps
+  // its own count in step). Validate here so a stale click can't cheat.
+  if (submission.action?.type === "item") {
+    const itemId = submission.action.itemId ?? "";
+    const def = itemById(itemId);
+    const held = player.inventory?.items[itemId] ?? 0;
+    if (!def?.consumable || held <= 0) {
+      sendToPlayer(socket, { type: "system", payload: { message: "You don't have that to use." } });
+      return;
+    }
+    player.inventory = removeItem(player.inventory!, itemId);
+    saveProgress(player);
+  }
+
   const { allSubmitted, pendingPlayerIds } = combatManager.submitAction(combatId, submission);
 
   // Broadcast updated pending list so all clients can show "waiting on…"
@@ -1354,11 +1423,18 @@ function resolveCombatRound(combatId: string): void {
   // ── Resolve ───────────────────────────────────────────────────────────────
   const { events, isOver, outcome } = combatManager.resolveRound(combatId);
 
-  // Broadcast the resolution to everyone in the room
+  // Broadcast the resolution to everyone still in the fight. A player who
+  // fled this round still gets it (they should watch their own escape); one
+  // who fled earlier is out and must not have the overlay reopened.
+  const fledThisRound = new Set(
+    events.filter(ev => ev.type === "flee").map(ev => ev.entityId)
+  );
   const broadcastView = combatManager.getBroadcastView(combatId);
   if (broadcastView) {
     const currentState = combatManager.getState(combatId);
     for (const pid of playersInCombat) {
+      const entity = state.entities.find(e => e.playerId === pid);
+      if (entity?.fled && !fledThisRound.has(entity.id)) continue;
       const finalView = combatManager.getViewForPlayer(combatId, pid) ?? broadcastView;
       emitToPlayer(pid, {
         type: "combat_resolution",
@@ -1386,10 +1462,11 @@ function resolveCombatRound(combatId: string): void {
       }
     }
 
-    // Award XP only on a win, and only to players who are still standing.
+    // Award XP only on a win, and only to players who are still standing —
+    // someone who fled kept their life instead of a share of the spoils.
     const survivors = new Set(
       state.entities
-        .filter(e => e.type === "player" && !e.isDead && e.playerId)
+        .filter(e => e.type === "player" && !e.isDead && !e.fled && e.playerId)
         .map(e => e.playerId!)
     );
 
@@ -1401,18 +1478,69 @@ function resolveCombatRound(combatId: string): void {
       scheduleHostileRespawn(state.roomId);
     }
 
+    const spoilNames = droppedItems.map(id => itemById(id)?.name ?? id);
+
     for (const pid of playersInCombat) {
+      // Whoever fled in an earlier round already got their personal "fled"
+      // ending — don't reopen their overlay with the party's result.
+      const entity = state.entities.find(e => e.playerId === pid);
+      if (entity?.fled && !fledThisRound.has(entity.id)) continue;
+      const won = outcome === "players_win" && survivors.has(pid);
       emitToPlayer(pid, {
         type: "combat_end",
-        payload: { combatId, outcome: outcome!, xpReward, goldReward },
+        payload: {
+          combatId, outcome: outcome!, xpReward, goldReward,
+          items: won ? spoilNames : [],
+        },
       });
 
-      if (outcome === "players_win" && survivors.has(pid)) {
+      if (won) {
         awardCombatXp(pid, xpReward);
         grantCombatLoot(pid, goldReward, droppedItems);
         const winner = getPlayerByPlayerId(pid);
         if (winner) maybeCompleteRoomQuest(winner, state.roomId);
       }
+    }
+
+    // Wounds — and worse — follow you out of the fight. Survivors keep their
+    // ending HP (rest at the tavern or drink a potion to recover); the fallen
+    // are dragged back to the Broken Lantern and come to with 1 HP. Defeat is
+    // a setback and a walk of shame, not an ending.
+    for (const entity of state.entities) {
+      if (entity.type !== "player" || !entity.playerId) continue;
+      // Fled in an earlier round → HP was written back when they ran.
+      if (entity.fled && !fledThisRound.has(entity.id)) continue;
+      const p = getPlayerByPlayerId(entity.playerId);
+      if (!p) continue; // disconnected mid-fight — keep their last save as-is
+
+      if (entity.isDead) {
+        p.hp = 1;
+        if (p.roomId !== "tavern") {
+          const fromRoomId = p.roomId;
+          if (fromRoomId) {
+            broadcastToRoom(fromRoomId, {
+              type: "player_presence",
+              payload: { playerName: getDisplayName(p), event: "left" },
+            }, p.id);
+          }
+          p.roomId = "tavern";
+          sendRoomUpdate(p, p.socket);
+          broadcastToRoom("tavern", {
+            type: "player_presence",
+            payload: { playerName: getDisplayName(p), event: "entered" },
+          }, p.id);
+          refreshRoomOccupants(fromRoomId, p.id);
+          refreshRoomOccupants("tavern", p.id);
+        }
+        sendToPlayer(p.socket, {
+          type: "system",
+          payload: { message: "You come to on a bench at the Broken Lantern — someone dragged you out of the dark. You can barely stand. (Try: rest)" },
+        });
+      } else {
+        p.hp = Math.max(1, entity.hp);
+      }
+      saveProgress(p);
+      sendHpUpdate(p);
     }
 
     // Refresh the room for everyone present so cleared hostiles disappear
@@ -1431,10 +1559,37 @@ function resolveCombatRound(combatId: string): void {
   const nextState = combatManager.getState(combatId);
   if (!nextState) return;
   const nextPending = nextState.entities
-    .filter(e => e.type === "player" && !e.isDead && e.playerId)
+    .filter(e => e.type === "player" && !e.isDead && !e.fled && e.playerId)
     .map(e => e.playerId!);
 
+  // A player who fled THIS round leaves the overlay now (the fight rolls on
+  // for the others): they get a personal "fled" end instead of a new round.
+  const fledNow = new Set(
+    events
+      .filter(ev => ev.type === "flee" && /escapes the fight/.test(ev.text))
+      .map(ev => nextState.entities.find(e => e.id === ev.entityId)?.playerId)
+      .filter((pid): pid is string => pid !== undefined)
+  );
+  for (const pid of fledNow) {
+    emitToPlayer(pid, {
+      type: "combat_end",
+      payload: { combatId, outcome: "fled", xpReward: 0, goldReward: 0, items: [] },
+    });
+    const runner = getPlayerByPlayerId(pid);
+    if (runner) {
+      // They escaped with their life — and whatever HP they had left.
+      const entity = nextState.entities.find(e => e.playerId === pid);
+      if (entity) runner.hp = Math.max(1, entity.hp);
+      saveProgress(runner);
+      sendHpUpdate(runner);
+      sendRoomUpdate(runner, runner.socket);
+    }
+  }
+
   for (const pid of playersInCombat) {
+    if (fledNow.has(pid)) continue;
+    const entity = nextState.entities.find(e => e.playerId === pid);
+    if (entity?.fled) continue; // fled in an earlier round — already out
     const view = combatManager.getViewForPlayer(combatId, pid);
     if (!view) continue;
     emitToPlayer(pid, {
@@ -1447,28 +1602,45 @@ function resolveCombatRound(combatId: string): void {
 /** How long a cleared room stays quiet before its hostiles return. */
 const HOSTILE_RESPAWN_MS = 3 * 60 * 1000;
 
-/** Rooms with a respawn already ticking (dedup so wins don't stack timers). */
-const pendingRespawns = new Set<string>();
+/** Rooms with a respawn ticking, keyed to the timer so it can be cut short. */
+const pendingRespawns = new Map<string, NodeJS.Timeout>();
 
 /**
  * Brings a cleared room's hostiles back after HOSTILE_RESPAWN_MS, warning
  * anyone standing there and refreshing their "Here:" panel. Keeps combat
  * encounters — and the quests built on them — repeatable on a shared server.
+ *
+ * Players who LEAVE a cleared room don't have to wait out the timer: the
+ * moment the room is empty of players its hostiles return (see
+ * maybeRespawnEmptyRoom), so stepping out and back in is a reliable way to
+ * grind a fight for XP.
  */
 function scheduleHostileRespawn(roomId: string): void {
   if (pendingRespawns.has(roomId)) return;
-  pendingRespawns.add(roomId);
-  setTimeout(() => {
-    pendingRespawns.delete(roomId);
-    const returned = worldManager.respawnHostiles(roomId);
-    if (returned.length === 0) return;
-    broadcastToRoom(roomId, {
-      type: "system",
-      payload: { message: "Something stirs in the dark — danger has crept back into this place." },
-    });
-    refreshRoomOccupants(roomId);
-    console.log(`[world] Respawned ${returned.length} hostile(s) in ${roomId}.`);
-  }, HOSTILE_RESPAWN_MS);
+  pendingRespawns.set(roomId, setTimeout(() => respawnHostilesNow(roomId), HOSTILE_RESPAWN_MS));
+}
+
+/** Fires a pending respawn immediately (idempotent — no-op if none pending). */
+function respawnHostilesNow(roomId: string): void {
+  const timer = pendingRespawns.get(roomId);
+  if (timer === undefined) return;
+  clearTimeout(timer);
+  pendingRespawns.delete(roomId);
+  const returned = worldManager.respawnHostiles(roomId);
+  if (returned.length === 0) return;
+  broadcastToRoom(roomId, {
+    type: "system",
+    payload: { message: "Something stirs in the dark — danger has crept back into this place." },
+  });
+  refreshRoomOccupants(roomId);
+  console.log(`[world] Respawned ${returned.length} hostile(s) in ${roomId}.`);
+}
+
+/** When the last player leaves a cleared room, its hostiles slink back at once. */
+function maybeRespawnEmptyRoom(roomId: string): void {
+  if (!pendingRespawns.has(roomId)) return;
+  if (getActivePlayersInRoom(roomId).length > 0) return;
+  respawnHostilesNow(roomId);
 }
 
 /**
@@ -1752,7 +1924,7 @@ function maybeTurnInQuest(player: Player, npc: { id: string }): boolean {
  */
 function saveProgress(player: Player): void {
   if (!player.playerId || !player.activeSlot || !player.character || !player.roomId) return;
-  const data = buildSaveData(player.character, player.roomId, player.progression, player.social, player.inventory, player.lore);
+  const data = buildSaveData(player.character, player.roomId, player.progression, player.social, player.inventory, player.lore, player.hp);
   const { playerId, activeSlot } = player;
   saveStore
     .save(playerId, activeSlot, data)
@@ -1847,9 +2019,33 @@ function handleInventoryAction(
         else { player.inventory = sold; message = `Sold ${def.name} for ${sellValue(def)} gold.`; }
       }
       break;
-    case "use":
-      message = "Best saved for the thick of a fight.";
+    case "use": {
+      // Wounds persist between fights, so a potion on the road is real healing.
+      const def = payload.itemId ? itemById(payload.itemId) : undefined;
+      const held = payload.itemId ? (before.items[payload.itemId] ?? 0) : 0;
+      if (!def?.consumable || held <= 0) {
+        message = "You don't have that to use.";
+        break;
+      }
+      if (def.consumable.heal) {
+        const max = playerMaxHp(player);
+        const cur = playerCurrentHp(player);
+        if (cur >= max) {
+          message = "You're unhurt — best saved for when it counts.";
+          break;
+        }
+        const amount = rollDice(def.consumable.heal);
+        player.hp = Math.min(max, cur + amount);
+        player.inventory = removeItem(before, payload.itemId!);
+        message = `You drink the ${def.name} and recover ${amount} HP (${player.hp}/${max}).`;
+        sendHpUpdate(player);
+      } else {
+        // Non-healing consumables (antidotes) cure combat conditions — nothing
+        // to cure out here.
+        message = "Nothing ails you that this would mend.";
+      }
       break;
+    }
   }
 
   if (message) sendToPlayer(socket, { type: "system", payload: { message } });
@@ -2196,6 +2392,55 @@ function handleJournalCommand(player: Player, socket: WebSocket, input: string):
   return true;
 }
 
+// ─────────────────────────────────────────────
+// RESTING
+// ─────────────────────────────────────────────
+
+/** Rooms with a safe bed. The Broken Lantern rents rooms; add ids to grow the list. */
+const REST_ROOMS = new Set<string>(["tavern"]);
+
+/**
+ * `rest` / `sleep` — take a room at the tavern and heal to full. Wounds persist
+ * between fights, so this (and potions) is how an adventurer recovers. Free at
+ * the Lantern: Aldric looks after the town's only monster-catcher.
+ */
+function handleRestCommand(player: Player, socket: WebSocket, input: string): boolean {
+  const verb = input.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (verb !== "rest" && verb !== "sleep") return false;
+
+  if (!player.roomId || !REST_ROOMS.has(player.roomId)) {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: "No safe bed here — the Broken Lantern rents rooms upstairs." },
+    });
+    return true;
+  }
+  if (player.playerId && combatManager.isPlayerInCombat(player.playerId)) {
+    sendToPlayer(socket, { type: "system", payload: { message: "Not while steel is drawn!" } });
+    return true;
+  }
+
+  const max = playerMaxHp(player);
+  if (playerCurrentHp(player) >= max) {
+    sendToPlayer(socket, {
+      type: "system",
+      payload: { message: "You're already hale and rested. The road can have you." },
+    });
+    return true;
+  }
+
+  player.hp = max;
+  saveProgress(player);
+  sendToPlayer(socket, {
+    type: "system",
+    payload: {
+      message: `You take the narrow stairs to a room above the taproom. The fog can't reach past the shutters, and sleep comes easy. You wake whole again — HP restored (${max}/${max}).`,
+    },
+  });
+  sendHpUpdate(player);
+  return true;
+}
+
 /** The lore this character has learned, as a set for the quest-gating checks. */
 function knownLoreOf(player: Player): ReadonlySet<string> {
   return new Set(player.lore ?? []);
@@ -2331,6 +2576,7 @@ function sendRoomUpdate(player: Player, socket: WebSocket): void {
       players:     occupants,
       npcs,
       ...(room.artKey ? { artKey: room.artKey } : {}),
+      ...(REST_ROOMS.has(room.id) ? { canRest: true } : {}),
     },
   });
 }

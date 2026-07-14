@@ -102,6 +102,20 @@ export function hazardDamage(type: GridCellType): number {
   return TERRAIN[type].hazardDamage;
 }
 
+// ─── Distance ─────────────────────────────────────────────────────────────────
+//
+// Movement is 8-directional (diagonals cost 1), so REACH must be measured the
+// same way or a corner-adjacent enemy reads as "range 2" and can't be hit with
+// a reach-1 weapon — visually adjacent but mechanically not. Chebyshev distance
+// (max of the axis deltas) matches the movement geometry: every tile touching
+// yours, corners included, is distance 1. Server resolution and client
+// targeting BOTH use this so they can never disagree.
+
+/** Board distance where diagonals count as 1 (matches 8-way movement). */
+export function chebyshev(a: GridPosition, b: GridPosition): number {
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
 export interface CombatEntity {
@@ -121,6 +135,10 @@ export interface CombatEntity {
   /** Remaining uses per ability id; 0 = on cooldown. */
   abilityUses: Record<string, number>;
   isDead: boolean;
+  /** Escaped the fight alive via the flee action — out of the combat but not dead. */
+  fled?: boolean;
+  /** Consumables carried in (itemId → count), spent via the "item" action. Players only. */
+  consumables?: Record<string, number>;
   /** Art key for the combatant's sprite (see CombatEntityView.sprite). */
   sprite?: string;
 }
@@ -142,6 +160,10 @@ export interface CombatEntityView {
   /** Only present for the receiving player's own entity. */
   weapon?: Weapon;
   abilities?: AbilityStatus[];
+  /** d20 attack bonus with the equipped weapon (own entity only) — lets the client estimate hit chance. */
+  attackModifier?: number;
+  /** Usable consumables carried into the fight (own entity only). */
+  consumables?: ConsumableStatus[];
   /**
    * Art key for this combatant's sprite, e.g. "warrior", "mage", "rat",
    * "fog_wolf". The renderer looks for `/assets/sprites/<sprite>.png` and, when
@@ -164,9 +186,18 @@ export interface AbilityStatus {
   range: number;
 }
 
+/** A consumable the player can spend as their combat action. */
+export interface ConsumableStatus {
+  itemId: string;
+  name: string;
+  count: number;
+  /** Heal dice, e.g. "2d4+2" — shown in the action button hint. */
+  heal?: string;
+}
+
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
-export type CombatActionType = "attack" | "ability" | "dodge" | "end_turn";
+export type CombatActionType = "attack" | "ability" | "dodge" | "item" | "flee" | "end_turn";
 
 /**
  * Submitted during the planning phase — one per entity per round.
@@ -181,6 +212,8 @@ export interface CombatActionSubmission {
     type: CombatActionType;
     targetEntityId?: string;
     abilityId?: string;
+    /** Catalog id of the consumable being used (type "item"). */
+    itemId?: string;
   };
 }
 
@@ -199,6 +232,10 @@ export type CombatEventType =
   | "damage"
   | "heal"
   | "ability_used"
+  | "item_used"
+  | "flee"
+  /** A planned move or attack that couldn't happen (blocked path, target gone) — always visible, never silent. */
+  | "action_fizzles"
   | "condition_applied"
   | "condition_removed"
   | "burn_damage"

@@ -46,6 +46,21 @@ export interface RoomMessage {
     npcs: NpcView[];
     /** Optional art key for the room scene (e.g. "tavern") */
     artKey?: string;
+    /** True where a safe bed is available — the client shows a Rest button. */
+    canRest?: boolean;
+  };
+}
+
+/**
+ * The player's out-of-combat vitals. Sent on entering the world and whenever
+ * current HP changes outside a fight (combat ends, resting, drinking a potion)
+ * so the header's HP readout stays truthful.
+ */
+export interface HpUpdateMessage {
+  type: "hp_update";
+  payload: {
+    hp: number;
+    maxHp: number;
   };
 }
 
@@ -441,6 +456,8 @@ export interface CombatEndMessage {
     outcome: CombatOutcome;
     xpReward: number;
     goldReward: number;
+    /** Names of item drops won, shown on the victory banner (empty otherwise). */
+    items?: string[];
   };
 }
 
@@ -653,6 +670,8 @@ export type Gender = "Male" | "Female";
 export interface DialogueChoice {
   label: string;
   value: string;
+  /** One-line flavor/mechanics blurb rendered under the label (e.g. class picks). */
+  description?: string;
 }
 
 export interface SaveSlotSummary {
@@ -681,6 +700,7 @@ export type ServerMessage =
   | SystemMessage
   | RoomMessage
   | ChatMessage
+  | HpUpdateMessage
   | SpeakerPortraitMessage
   | DialogueMessage
   | EpilogueMessage

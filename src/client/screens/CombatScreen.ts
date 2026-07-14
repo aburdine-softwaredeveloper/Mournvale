@@ -35,7 +35,7 @@ import type {
   CombatEvent,
   CombatActionSubmission,
 } from "../../types/combat";
-import { TERRAIN, entryCost } from "../../types/combat";
+import { TERRAIN, entryCost, coverBonus, chebyshev } from "../../types/combat";
 import type {
   CombatStartMessage,
   CombatPlanningMessage,
@@ -164,7 +164,7 @@ export class CombatScreen {
           </div>
           <div id="cs-sidebar">
             <div class="cs-panel">
-              <div class="cs-panel-title">Initiative</div>
+              <div class="cs-panel-title" title="Everyone plans at once, then acts in this order — combatants above you resolve their turn before yours.">Turn order · top acts first</div>
               <div id="cs-init-list"></div>
             </div>
             <div class="cs-panel">
@@ -273,6 +273,29 @@ export class CombatScreen {
       case "ability_used":
         this.animateAbility(event, done);
         return;
+      case "item_used":
+        this.flashToken(event.entityId, "cs-token-cast");
+        setTimeout(done, CombatScreen.EVENT_MS);
+        return;
+      case "action_fizzles":
+        // A plan that came to nothing (target gone, path blocked) — jolt the
+        // actor so the "nothing happened" is visibly THEIR beat, not a freeze.
+        this.flashToken(event.entityId, "cs-token-step");
+        setTimeout(done, CombatScreen.EVENT_MS);
+        return;
+      case "flee": {
+        // Second flee event ("escapes") removes the runner from the board.
+        if (/escapes/.test(event.text)) {
+          const e = this.state.entities.find(x => x.id === event.entityId);
+          if (e) { e.isDead = true; this.clearGridCell(e.position); }
+          this.renderGrid();
+          setTimeout(done, CombatScreen.BIG_MS);
+        } else {
+          this.flashToken(event.entityId, "cs-token-step");
+          setTimeout(done, CombatScreen.EVENT_MS);
+        }
+        return;
+      }
       case "entity_dies": {
         const e = this.state.entities.find(x => x.id === event.entityId);
         if (e) { e.isDead = true; this.clearGridCell(e.position); }
@@ -511,13 +534,13 @@ export class CombatScreen {
     if (!grid || !this.state) return;
 
     const me        = this.myEntity();
-    const reachable = me && this.mode === "selecting_move" ? this.reachableCells(me) : new Set<string>();
+    const reachable = me && this.mode === "selecting_move" ? this.reachableCells(me) : new Map<string, number>();
     // Tiles + targets in range of the chosen action, shaded so it's obvious what
     // the button can reach before you commit. Movement range is folded into the
     // shaded tiles too, so EVERY action lights up its full reach the moment you
     // pick it — not only on hover.
     const range     = me ? this.actionRange(me) : { tiles: new Set<string>(), targetIds: new Set<string>(), isAbility: false };
-    for (const k of reachable) range.tiles.add(k);
+    for (const k of reachable.keys()) range.tiles.add(k);
 
     grid.innerHTML = "";
     // Track size must match the viewport: 60px tracks read well on desktop,
@@ -579,7 +602,14 @@ export class CombatScreen {
         if (!cell?.passable)           div.classList.add("cell-wall");
         if (this.trail.has(posKey))    div.classList.add("cell-trail");
         if (range.tiles.has(posKey))   div.classList.add("cell-range");
-        if (reachable.has(posKey))     div.classList.add("cell-move");
+        if (reachable.has(posKey)) {
+          div.classList.add("cell-move");
+          // Movement price stamped on the tile so terrain costs read at a glance.
+          const badge = document.createElement("span");
+          badge.className = "cs-move-cost";
+          badge.textContent = String(reachable.get(posKey));
+          div.appendChild(badge);
+        }
         if (entity && range.targetIds.has(entity.id)) div.classList.add(range.isAbility ? "cell-target" : "cell-attack");
         if (this.plan.move?.x === col && this.plan.move?.y === row) div.classList.add("cell-planned");
 
@@ -598,6 +628,16 @@ export class CombatScreen {
           const letter = document.createElement("span");
           letter.className   = "cs-token-letter";
           letter.textContent = entity.name.charAt(0).toUpperCase();
+
+          // Duplicate-name suffix ("Cellar Rat B") rides the token as a small
+          // corner badge so the board matches the turn-order list at a glance.
+          const suffix = entity.name.match(/ ([A-Z])$/)?.[1];
+          if (suffix) {
+            const tag = document.createElement("span");
+            tag.className   = "cs-token-tag";
+            tag.textContent = suffix;
+            token.appendChild(tag);
+          }
 
           // Art drop-in: if this combatant's sprite is registered, draw it as a
           // billboarded sprite that covers the placeholder token. The sprite
@@ -645,18 +685,42 @@ export class CombatScreen {
     const list = this.el.querySelector("#cs-init-list") as HTMLElement | null;
     if (!list || !this.state) return;
     list.innerHTML = "";
+    const myId = this.myEntity()?.id;
+    const myIdx = this.state.initiativeOrder.indexOf(myId ?? "");
+    let n = 0;
     for (const id of this.state.initiativeOrder) {
       const e = this.state.entities.find(x => x.id === id);
       if (!e) continue;
+      n++;
+      const isMine = e.id === myId;
       const row = document.createElement("div");
       row.className = [
         "cs-init-row",
         e.isDead ? "cs-init-dead" : "",
-        e.id === this.myEntity()?.id ? "cs-init-mine" : "",
+        isMine ? "cs-init-mine" : "",
       ].join(" ");
-      row.innerHTML = `<span class="cs-init-name">${e.name}</span>
+      const idx = this.state.initiativeOrder.indexOf(id);
+      row.title = e.isDead
+        ? `${e.name} is out of the fight.`
+        : isMine
+          ? "Your turn resolves at this point in the round."
+          : myIdx >= 0 && idx < myIdx
+            ? `${e.name} acts BEFORE you — they may have moved by the time your attack lands.`
+            : `${e.name} acts after you.`;
+      row.innerHTML = `<span class="cs-init-num">${n}</span>
+                       <span class="cs-init-name">${e.name}${isMine ? ' <span class="cs-init-you">YOU</span>' : ""}</span>
                        <span class="cs-init-hp">${e.hp}/${e.maxHp}</span>
-                       <span class="cs-init-badge">${e.initiative}</span>`;
+                       <span class="cs-init-badge" title="Initiative roll">${e.initiative}</span>`;
+      // Hovering a row spotlights that combatant's token on the board, so
+      // "Cellar Rat B" is never a mystery.
+      row.addEventListener("mouseenter", () => {
+        const token = this.el.querySelector(`.cs-token[data-entity-id="${e.id}"]`);
+        token?.classList.add("cs-token-focus");
+      });
+      row.addEventListener("mouseleave", () => {
+        const token = this.el.querySelector(`.cs-token[data-entity-id="${e.id}"]`);
+        token?.classList.remove("cs-token-focus");
+      });
       list.appendChild(row);
     }
   }
@@ -690,12 +754,28 @@ export class CombatScreen {
       panel.appendChild(btn);
     }
 
+    // Dodge — trade the turn's action for a defensive stance.
+    const dodgeBtn = this.actionBtn("Dodge", this.plan.action?.type === "dodge", () => this.selectDodge());
+    this.onHover(dodgeBtn, "Dodge — attacks against you roll with disadvantage until you next act.");
+    panel.appendChild(dodgeBtn);
+
+    // Carried consumables — drinking one is the turn's action.
+    for (const item of me.consumables ?? []) {
+      const btn = this.actionBtn(
+        `${item.name} ×${item.count}`,
+        this.plan.action?.type === "item" && this.plan.action.itemId === item.itemId,
+        item.count > 0 ? () => this.selectItem(item.itemId, item.name) : undefined
+      );
+      this.onHover(btn, `${item.name}${item.heal ? ` — heals ${item.heal}` : ""}. Using it takes your action this turn.`);
+      panel.appendChild(btn);
+    }
+
     if (this.plan.move || this.plan.action) {
       const summary = document.createElement("div");
       summary.className   = "cs-plan-summary";
       const parts: string[] = [];
       if (this.plan.move)   parts.push(`Move → (${this.plan.move.x},${this.plan.move.y})`);
-      if (this.plan.action) parts.push(this.plan.action.type);
+      if (this.plan.action) parts.push(this.planActionLabel(this.plan.action));
       summary.textContent = parts.join(" + ");
       panel.appendChild(summary);
 
@@ -705,7 +785,33 @@ export class CombatScreen {
     }
 
     const endBtn = this.actionBtn("End turn", false, () => this.submitEndTurn());
+    this.onHover(endBtn, "End turn — do nothing this round.");
     panel.appendChild(endBtn);
+
+    const fleeBtn = this.actionBtn("Flee", false, () => this.submitFlee());
+    fleeBtn.classList.add("cs-btn-flee");
+    this.onHover(fleeBtn, "Flee the fight — foes in reach each get one parting swipe as you run. No loot, no XP, but you keep your life.");
+    panel.appendChild(fleeBtn);
+  }
+
+  /** Human label for a planned action in the summary line. */
+  private planActionLabel(action: NonNullable<Plan["action"]>): string {
+    switch (action.type) {
+      case "item": {
+        const item = this.myEntity()?.consumables?.find(c => c.itemId === action.itemId);
+        return item ? `Use ${item.name}` : "Use item";
+      }
+      case "ability": {
+        const a = this.myEntity()?.abilities?.find(x => x.id === action.abilityId);
+        return a?.name ?? "ability";
+      }
+      case "dodge":  return "Dodge";
+      case "attack": {
+        const t = this.state?.entities.find(e => e.id === action.targetEntityId);
+        return t ? `Attack ${t.name}` : "Attack";
+      }
+      default: return action.type;
+    }
   }
 
   // ─── Interaction ───────────────────────────────────────────────────────────
@@ -799,6 +905,22 @@ export class CombatScreen {
     this.renderWaiting();
   }
 
+  private selectDodge(): void {
+    this.plan.action = { type: "dodge" };
+    this.mode        = "idle";
+    this.renderGrid();
+    this.renderActions();
+    this.setHint("Dodge set — you'll weave defensively this round. Confirm turn when ready.");
+  }
+
+  private selectItem(itemId: string, name: string): void {
+    this.plan.action = { type: "item", itemId };
+    this.mode        = "idle";
+    this.renderGrid();
+    this.renderActions();
+    this.setHint(`${name} set — you'll use it as your action. Confirm turn when ready.`);
+  }
+
   private submitEndTurn(): void {
     const me = this.myEntity();
     if (!me) return;
@@ -806,6 +928,18 @@ export class CombatScreen {
     this.plan.hasSubmitted = true;
     this.renderActions();
     this.renderWaiting();
+  }
+
+  /** Flee is a whole-turn commitment: it replaces any planned move/action. */
+  private submitFlee(): void {
+    const me = this.myEntity();
+    if (!me) return;
+    this.onSubmitAction({ entityId: me.id, action: { type: "flee" } });
+    this.plan.hasSubmitted = true;
+    this.mode = "idle";
+    this.renderActions();
+    this.renderWaiting();
+    this.setHint("You brace to run — the round resolves…");
   }
 
   // ─── Log ───────────────────────────────────────────────────────────────────
@@ -826,22 +960,36 @@ export class CombatScreen {
   private showEndOverlay(msg: CombatEndMessage): void {
     const root = this.el.querySelector("#cs-root");
     if (!root) return;
-    const win     = msg.payload.outcome === "players_win";
+    const { outcome, xpReward, goldReward, items } = msg.payload;
+    const win  = outcome === "players_win";
+    const fled = outcome === "fled";
+
+    const title = win ? "Victory!" : fled ? "You got away" : "Defeated";
+    let body: string;
+    if (win) {
+      body = `+${xpReward} XP &nbsp;·&nbsp; +${goldReward} gold`;
+      if (items && items.length) {
+        body += `<br><span class="cs-end-spoils">Spoils: ${items.join(", ")}</span>`;
+      }
+    } else if (fled) {
+      body = "You slip away into the dark — alive, but empty-handed.";
+    } else {
+      body = "The party has fallen…";
+    }
+
+    this.setHint("The fight is over.");
     const overlay = document.createElement("div");
     overlay.className = "cs-end-overlay";
     overlay.innerHTML = `
       <div class="cs-end-card">
-        <h2 class="cs-end-title">${win ? "Victory!" : "Defeated"}</h2>
-        <p class="cs-end-body">${win
-          ? `+${msg.payload.xpReward} XP &nbsp;·&nbsp; +${msg.payload.goldReward} gold`
-          : "The party has fallen…"
-        }</p>
+        <h2 class="cs-end-title">${title}</h2>
+        <p class="cs-end-body">${body}</p>
         <button id="cs-return-btn">Return</button>
       </div>
     `;
     root.appendChild(overlay);
     overlay.querySelector("#cs-return-btn")?.addEventListener("click", () =>
-      this.onCombatEnd(msg.payload.outcome)
+      this.onCombatEnd(outcome)
     );
   }
 
@@ -868,13 +1016,14 @@ export class CombatScreen {
   }
 
   /**
-   * Tiles the entity can reach this turn, honoring terrain entry costs (rubble
-   * costs 2). Uniform-cost search that mirrors the server's findPath, so the
-   * blue highlight never offers a tile the server would reject.
+   * Tiles the entity can reach this turn (key → movement cost), honoring
+   * terrain entry costs (rubble costs 2). Uniform-cost search that mirrors the
+   * server's findPath, so the highlight never offers a tile the server would
+   * reject — and each tile knows its price, for the cost badges.
    */
-  private reachableCells(entity: CombatEntityView): Set<string> {
-    if (!this.state) return new Set();
-    const reachable = new Set<string>();
+  private reachableCells(entity: CombatEntityView): Map<string, number> {
+    const reachable = new Map<string, number>();
+    if (!this.state) return reachable;
     const best = new Map<string, number>([[`${entity.position.x},${entity.position.y}`, 0]]);
     const dirs: Array<[number, number]> = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
     const frontier: Array<{ pos: GridPosition; cost: number }> = [{ pos: entity.position, cost: 0 }];
@@ -884,7 +1033,7 @@ export class CombatScreen {
       const { pos, cost } = frontier.splice(bi, 1)[0]!;
       const key = `${pos.x},${pos.y}`;
       if (cost > (best.get(key) ?? Infinity)) continue;
-      if (cost > 0) reachable.add(key);
+      if (cost > 0) reachable.set(key, cost);
       for (const [dx, dy] of dirs) {
         const nx = pos.x + dx, ny = pos.y + dy;
         if (nx < 0 || ny < 0 || ny >= 8 || nx >= 8) continue;
@@ -934,19 +1083,31 @@ export class CombatScreen {
     this.setHint(this.baseHint());
   }
 
-  /** One-line read on a combatant: vitals, and reach in attack mode. */
+  /** One-line read on a combatant: vitals, reach and hit odds in attack mode. */
   private entityHint(e: CombatEntityView, me: CombatEntityView | undefined): string {
     if (e.isDead) return `${e.name} — down.`;
     const vitals = `${e.name} — ${e.hp}/${e.maxHp} HP, AC ${e.ac}`;
     if (me && this.mode === "selecting_attack" && e.type !== me.type && me.weapon) {
-      const dist = this.manhattan(e.position, this.actionOrigin(me));
+      const dist = chebyshev(e.position, this.actionOrigin(me));
       const fromMove = this.plan.move ? " after your move" : "";
       return dist <= me.weapon.range
-        ? `${vitals}. In reach${fromMove} (range ${dist}/${me.weapon.range}) — click to strike.`
+        ? `${vitals}. In reach${fromMove} (range ${dist}/${me.weapon.range})${this.hitChanceNote(e, me)} — click to strike.`
         : `${vitals}. Too far — range ${dist}, your weapon reaches ${me.weapon.range}.`;
     }
     const cond = e.conditions.length ? ` · ${e.conditions.join(", ")}` : "";
     return `${vitals}${cond}.`;
+  }
+
+  /** "~65% to hit" estimate from my attack bonus vs the target's AC (+cover). */
+  private hitChanceNote(target: CombatEntityView, me: CombatEntityView): string {
+    if (me.attackModifier === undefined) return "";
+    const cell  = this.state?.grid[target.position.y]?.[target.position.x];
+    const cover = cell ? coverBonus(cell.type) : 0;
+    const needed = target.ac + cover - me.attackModifier;
+    // d20: nat 1 always misses, nat 20 always hits → clamp to [5%, 95%].
+    const pct = Math.max(5, Math.min(95, (21 - needed) * 5));
+    const coverNote = cover > 0 ? ` (+${cover} AC cover)` : "";
+    return `, ~${pct}% to hit${coverNote}`;
   }
 
   /** Plain-language explanation of a terrain tile's effect. */
@@ -1018,10 +1179,6 @@ export class CombatScreen {
       .forEach(c => c.classList.remove("cell-path", "cell-dest"));
   }
 
-  private manhattan(a: GridPosition, b: GridPosition): number {
-    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-  }
-
   /**
    * The position an action reaches FROM. If a move is already planned, that's
    * the tile the entity will be standing on when its action resolves (the server
@@ -1050,10 +1207,10 @@ export class CombatScreen {
       const R = me.weapon.range;
       for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
         if (x === origin.x && y === origin.y) continue;
-        if (this.manhattan({ x, y }, origin) <= R) tiles.add(`${x},${y}`);
+        if (chebyshev({ x, y }, origin) <= R) tiles.add(`${x},${y}`);
       }
       for (const e of this.state.entities) {
-        if (e.type !== me.type && !e.isDead && this.manhattan(e.position, origin) <= R) targetIds.add(e.id);
+        if (e.type !== me.type && !e.isDead && chebyshev(e.position, origin) <= R) targetIds.add(e.id);
       }
       return { tiles, targetIds, isAbility: false };
     }
@@ -1067,13 +1224,13 @@ export class CombatScreen {
         // Shade the reachable tiles (like attack) so the ability's range reads…
         for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
           if (x === origin.x && y === origin.y) continue;
-          if (this.manhattan({ x, y }, origin) <= reach) tiles.add(`${x},${y}`);
+          if (chebyshev({ x, y }, origin) <= reach) tiles.add(`${x},${y}`);
         }
         // …and only in-reach living targets of the right side are clickable.
         for (const e of this.state.entities) {
           if (e.isDead) continue;
           const match = want === "enemy" ? e.type !== me.type : e.type === me.type;
-          if (match && this.manhattan(e.position, origin) <= reach) targetIds.add(e.id);
+          if (match && chebyshev(e.position, origin) <= reach) targetIds.add(e.id);
         }
       }
       return { tiles, targetIds, isAbility: true };
@@ -1187,6 +1344,9 @@ export class CombatScreen {
          ".cs-theme-cellar .cs-cell"), which would otherwise hide them. */
       #cs-grid .cell-move { background:rgba(92,100,66,.5); border-color:#7c8a52; cursor:pointer; }
       #cs-grid .cell-move:hover { background:rgba(92,100,66,.68); }
+      /* Movement price stamped on each reachable tile. */
+      .cs-move-cost { position:absolute; top:2px; right:3px; font-size:9px; line-height:1; color:#ece4cf; background:rgba(59,47,32,.72); padding:1px 3px; border-radius:3px; pointer-events:none; z-index:2; }
+      .cs-iso .cs-move-cost { transform:rotateZ(-45deg) rotateX(-55deg); transform-origin:top right; }
       /* Route preview: the path the token would walk to the hovered tile. */
       #cs-grid .cell-path { background:rgba(216,184,120,.4); border-color:#caa468; }
       #cs-grid .cell-path::before { content:""; position:absolute; inset:38%; border-radius:50%; background:rgba(216,184,120,.85); }
@@ -1388,17 +1548,25 @@ export class CombatScreen {
       .cs-panel { background:#dac7a2; color:#3b2f20; border:1px solid #7a6344; border-radius:8px; padding:10px; }
       .cs-panel-log { flex:1; display:flex; flex-direction:column; min-height:0; }
       .cs-panel-title { font-size:11px; color:#6e5c42; margin-bottom:6px; }
-      .cs-init-row { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:12px; }
-      .cs-init-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .cs-init-row { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:12px; cursor:default; }
+      .cs-init-row:hover { background:rgba(90,58,28,.08); }
+      .cs-init-num { font-size:10px; color:#8a7a5e; min-width:12px; text-align:right; }
+      .cs-init-name { flex:1; white-space:normal; line-height:1.25; overflow-wrap:anywhere; }
+      .cs-init-you { font-size:9px; background:#5c6442; color:#ece4cf; padding:1px 4px; border-radius:3px; vertical-align:1px; }
       .cs-init-hp { font-size:11px; color:#6e5c42; }
       .cs-init-badge { font-size:11px; background:rgba(90,58,28,.14); padding:1px 5px; border-radius:3px; }
       .cs-init-dead { opacity:.4; text-decoration:line-through; }
       .cs-init-mine { color:#5a3a1c; font-weight:500; }
+      /* Spotlight ring when the matching turn-order row is hovered. */
+      .cs-token-focus { outline:3px solid #c9a24b; outline-offset:2px; }
+      /* A/B duplicate-name badge riding the token's corner. */
+      .cs-token-tag { position:absolute; top:-5px; right:-5px; font-size:8px; line-height:1; background:#3b2f20; color:#ece4cf; padding:2px 3px; border-radius:3px; border:1px solid #8a7a5e; }
       .cs-btn { display:block; width:100%; padding:7px 10px; margin-bottom:5px; background:#c8b485; border:1px solid #7a6344; border-radius:6px; color:#3b2f20; cursor:pointer; font-size:12px; text-align:left; transition:background .1s; }
       .cs-btn:hover:not([disabled]) { background:#bda36f; }
       .cs-btn[disabled] { opacity:.4; cursor:not-allowed; }
       .cs-btn-active { border-color:#8a5a2c; color:#5a3a1c; }
       .cs-btn-confirm { border-color:#5c6442; color:#4a5232; margin-top:8px; }
+      .cs-btn-flee { border-color:#8a3b2a; color:#7a3424; }
       .cs-plan-summary { font-size:11px; color:#6e5c42; padding:3px 0; }
       .cs-muted { font-size:12px; color:#6e5c42; margin:0; }
       #cs-log { overflow-y:auto; flex:1; font-size:11px; line-height:1.7; }
@@ -1410,6 +1578,10 @@ export class CombatScreen {
       .cs-log-heal        { color:#5c6442; }
       .cs-log-burn_damage { color:#8a5a2c; }
       .cs-log-combat_ends { color:#5a3a1c; font-weight:500; }
+      .cs-log-action_fizzles { color:#7a5c8a; font-style:italic; }
+      .cs-log-flee { color:#8a5a2c; font-style:italic; }
+      .cs-log-item_used { color:#5c6442; }
+      .cs-end-spoils { font-size:12px; color:#5a4a32; }
       .cs-end-overlay { position:absolute; inset:0; background:rgba(20,12,6,.6); display:flex; align-items:center; justify-content:center; z-index:10; }
       .cs-end-card { background:#dac7a2; border:2px solid #8a5a2c; border-radius:12px; padding:32px 40px; text-align:center; }
       .cs-end-title { margin:0 0 8px; font-size:22px; font-weight:500; color:#5a3a1c; }

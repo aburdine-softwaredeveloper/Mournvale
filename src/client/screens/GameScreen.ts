@@ -19,7 +19,7 @@
  * All outgoing commands flow through the onCommand callback.
  */
 
-import { CommandMenu, DEFAULT_COMMANDS, VERTICAL_COMMANDS, TRADE_COMMAND, type CommandDefinition } from "../components/CommandMenu";
+import { CommandMenu, DEFAULT_COMMANDS, VERTICAL_COMMANDS, TRADE_COMMAND, REST_COMMAND, type CommandDefinition } from "../components/CommandMenu";
 import { PartyPanel } from "../components/PartyPanel";
 import { CharacterPanel } from "../components/CharacterPanel";
 import { TalentTreePanel } from "../components/TalentTreePanel";
@@ -246,19 +246,32 @@ export class GameScreen {
   }
 
   public updateRoom(msg: RoomMessage): void {
-    const { name, description, exits, npcs, players, artKey } = msg.payload;
+    const { name, description, exits, npcs, players, artKey, canRest } = msg.payload;
 
     this.roomName.textContent  = name;
     this.roomDesc.textContent  = description;
     this.roomExits.textContent = exits.length > 0 ? exits.join(", ") : "none";
 
-    this.updateContextualCommands(exits, npcs);
+    this.updateContextualCommands(exits, npcs, canRest ?? false);
     this.expandedNpcId = null;
     this.renderHere(npcs, players);
     this.updateRoomImage(artKey);
 
     // Leaving a room ends any in-progress conversation portraits.
     this.dismissConversationPortraits();
+  }
+
+  /**
+   * Paints the header's HP readout — the out-of-combat vitals. Wounds persist
+   * between fights, so this is how a player knows it's time to rest or drink.
+   * Goes oxblood when badly hurt.
+   */
+  public updateHp(hp: number, maxHp: number): void {
+    const el = document.getElementById("player-hp-display");
+    if (!el) return;
+    el.classList.remove("hidden");
+    el.textContent = `HP ${hp}/${maxHp}`;
+    el.classList.toggle("hp-low", hp <= maxHp * 0.3);
   }
 
   // ─────────────────────────────────────────────
@@ -296,12 +309,14 @@ export class GameScreen {
    * Horizontal movement stays always-on (the N/S/E/W buttons), matching the
    * existing UX; only vertical movement is gated on availability.
    */
-  private updateContextualCommands(exits: string[], npcs: NpcView[]): void {
+  private updateContextualCommands(exits: string[], npcs: NpcView[], canRest: boolean): void {
     const contextual: CommandDefinition[] = [];
     if (exits.includes("up"))   contextual.push(VERTICAL_COMMANDS.up);
     if (exits.includes("down")) contextual.push(VERTICAL_COMMANDS.down);
     // A Trade button appears only where there's a vendor to trade with.
     if (npcs.some(n => n.role === "vendor")) contextual.push(TRADE_COMMAND);
+    // A Rest button appears only where there's a safe bed (server-declared).
+    if (canRest) contextual.push(REST_COMMAND);
     this.commandMenu.setContextual(contextual);
   }
 
@@ -491,6 +506,19 @@ export class GameScreen {
         });
         intentGroup.appendChild(fightBtn);
       } else {
+        // Plain conversation first — no skill check, just words. This is the
+        // gentle default a new player reaches for before the intent gambits.
+        const talkBtn = document.createElement("button");
+        talkBtn.className   = "npc-intent-btn npc-intent-talk";
+        talkBtn.textContent = "💬 Talk";
+        talkBtn.title       = "Just speak with them — then type what you say";
+        talkBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.focusInputWith(`say ${npc.name}`);
+          this.collapseNpcRow(wrapper, intentGroup);
+        });
+        intentGroup.appendChild(talkBtn);
+
         for (const option of INTENT_OPTIONS) {
           const btn = document.createElement("button");
           btn.className   = "npc-intent-btn";
