@@ -60,6 +60,12 @@ export const VERTICAL_COMMANDS: Record<"up" | "down", CommandDefinition> = {
  */
 export const TRADE_COMMAND: CommandDefinition = { command: "trade", label: "Trade ⚖", shortcut: "g" };
 
+/**
+ * Contextual "Rest" command, shown only in rooms with a safe bed (the server
+ * flags them via RoomMessage.canRest). Sleeping heals to full.
+ */
+export const REST_COMMAND: CommandDefinition = { command: "rest", label: "Rest ✦", shortcut: "r" };
+
 export class CommandMenu {
   private readonly container: HTMLElement;
   /** The combined base + contextual list, used for shortcut lookup. */

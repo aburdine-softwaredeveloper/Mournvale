@@ -115,16 +115,28 @@ export class CharacterCreationScreen {
   /** Renders the clickable choice menu */
   private showChoices(
     step: CharacterCreationStep | undefined,
-    choices: { label: string; value: string }[]
+    choices: { label: string; value: string; description?: string }[]
   ): void {
     this.choiceList.innerHTML = "";
 
     choices.forEach((choice, i) => {
       const li = document.createElement("li");
       li.className = "choice-item";
-      li.textContent = choice.label;
       li.tabIndex = 0;
       li.dataset.value = choice.value;
+
+      const labelEl = document.createElement("span");
+      labelEl.className = "choice-label";
+      labelEl.textContent = choice.label;
+      li.appendChild(labelEl);
+
+      // A one-line blurb under the label (class picks) so nobody chooses blind.
+      if (choice.description) {
+        const descEl = document.createElement("span");
+        descEl.className = "choice-desc";
+        descEl.textContent = choice.description;
+        li.appendChild(descEl);
+      }
 
       const select = () => {
         if (step) this.submit(step, choice.value);
@@ -250,7 +262,15 @@ export class CharacterCreationScreen {
   private wireNameInput(): void {
     const submitName = () => {
       const value = this.nameInput.value.trim();
-      if (!value) return;
+      if (!value) {
+        // Never fail silently: shake the field and say what's needed.
+        this.nameInput.placeholder = "Every soul needs a name…";
+        this.nameInput.classList.remove("input-nudge");
+        void this.nameInput.offsetWidth; // restart the animation
+        this.nameInput.classList.add("input-nudge");
+        this.nameInput.focus();
+        return;
+      }
       if (this.currentStep === "name") {
         this.submit("name", value);
       }

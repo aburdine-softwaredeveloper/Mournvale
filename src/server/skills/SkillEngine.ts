@@ -175,17 +175,26 @@ export function rollInitiative(
   return { entityId, roll: { die: 20, result: d20, modifier, total }, total };
 }
 
+/** Advantage state for an attack roll (5e-style: roll two d20, keep one). */
+export type RollEdge = "normal" | "advantage" | "disadvantage";
+
 /**
  * Attack roll: d20 + proficiency + ability modifier vs target AC.
  * Natural 20 always hits and doubles damage dice.
  * Natural 1 always misses.
+ * With advantage/disadvantage, two d20 are rolled and the higher/lower kept.
  */
 export function rollAttack(
   attackerStats: CharacterStats,
   targetAC: number,
-  weapon: Weapon
+  weapon: Weapon,
+  edge: RollEdge = "normal"
 ): AttackResult {
-  const d20         = rollDie(20);
+  let d20 = rollDie(20);
+  if (edge !== "normal") {
+    const second = rollDie(20);
+    d20 = edge === "advantage" ? Math.max(d20, second) : Math.min(d20, second);
+  }
   const attackBonus = getAttackBonus(attackerStats, weapon);
   const total       = d20 + attackBonus;
   const crit        = d20 === 20;

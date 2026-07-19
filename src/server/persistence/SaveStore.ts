@@ -166,20 +166,36 @@ export class JsonFileSaveStore implements SaveStore {
     }
   }
 
+  /**
+   * In-flight write per slot. Combat end fires several saves for the same
+   * player in one tick (XP, loot, quest completion); chaining them means the
+   * writes land in order and never race each other's temp file.
+   */
+  private writeQueues = new Map<string, Promise<void>>();
+
   public async save(
     playerId: string,
     slot: number,
     data: SaveData
   ): Promise<void> {
     const file = this.slotPath(playerId, slot);
+    const queued = (this.writeQueues.get(file) ?? Promise.resolve())
+      .catch(() => {}) // a failed earlier write must not poison the queue
+      .then(() => this.writeFile(file, data));
+    this.writeQueues.set(file, queued);
+    return queued;
+  }
+
+  private async writeFile(file: string, data: SaveData): Promise<void> {
     const dir = path.dirname(file);
 
     // Ensure the player's save directory exists
     await fs.mkdir(dir, { recursive: true });
 
     // Write atomically-ish: write to temp then rename, so a crash
-    // mid-write can't corrupt an existing good save.
-    const tmp = `${file}.tmp`;
+    // mid-write can't corrupt an existing good save. The temp name is
+    // unique per write so overlapping saves can't steal each other's file.
+    const tmp = `${file}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
     const payload = JSON.stringify(data, null, 2);
 
     await fs.writeFile(tmp, payload, "utf-8");
@@ -210,7 +226,8 @@ export function buildSaveData(
   progression?: SaveData["progression"],
   social?: SaveData["social"],
   inventory?: SaveData["inventory"],
-  lore?: SaveData["lore"]
+  lore?: SaveData["lore"],
+  hp?: SaveData["hp"]
 ): SaveData {
   return {
     version: SAVE_VERSION,
@@ -220,6 +237,7 @@ export function buildSaveData(
     ...(social && { social }),
     ...(inventory && { inventory }),
     ...(lore && { lore }),
+    ...(hp !== undefined && { hp }),
     savedAt: Date.now(),
   };
 }

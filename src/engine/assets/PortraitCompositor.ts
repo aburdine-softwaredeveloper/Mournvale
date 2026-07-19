@@ -47,6 +47,21 @@ const GLASSES_Y = 35;
 const GLASSES_H = 13;
 const GLASSES_X = Math.round((CANVAS_W - GLASSES_W) / 2);
 
+/**
+ * Classes whose art ships a baked-in glasses variant (`_glasses.png`) with
+ * spectacles drawn to match that art's face. For these we swap in the
+ * pre-drawn portrait instead of layering the generic overlay, which is
+ * tuned for the chibi placeholder faces and won't line up. Keyed by
+ * `{gender}_{class}` (lowercase). Extend as more class art lands.
+ */
+const BAKED_GLASSES = new Set<string>([
+  "female_archer",
+  "male_healer",
+  "male_knight",
+  "male_warrior",
+  "male_mage",
+]);
+
 // ─────────────────────────────────────────────
 // COMPOSITOR
 // ─────────────────────────────────────────────
@@ -57,10 +72,16 @@ export class PortraitCompositor {
    * referenced PNGs load lazily in the browser when the SVG renders.
    */
   public compose(spec: PortraitSpec): string {
+    // Prefer a baked-in glasses portrait when the class provides one; those
+    // spectacles are drawn onto the art, so no overlay is needed.
+    const key = `${spec.gender.toLowerCase()}_${spec.characterClass.toLowerCase()}`;
+    const useBaked = spec.glasses && BAKED_GLASSES.has(key);
+
     const portraitUrl = assetRegistry.portraitUrl(
       spec.gender,
       spec.hairColor,
-      spec.characterClass
+      spec.characterClass,
+      useBaked
     );
 
     const layers: string[] = [
@@ -69,7 +90,7 @@ export class PortraitCompositor {
         `style="image-rendering:pixelated"/>`,
     ];
 
-    if (spec.glasses) {
+    if (spec.glasses && !useBaked) {
       const glassesUrl = assetRegistry.glassesUrl(spec.gender);
       layers.push(
         `<image href="${glassesUrl}" x="${GLASSES_X}" y="${GLASSES_Y}" ` +

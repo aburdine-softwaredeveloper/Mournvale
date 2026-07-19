@@ -113,6 +113,14 @@ export interface Player {
    * (Quest.requiresLore). Scoped to `activeSlot`; persisted with the save.
    */
   lore?: string[];
+
+  /**
+   * Current hit points, carried BETWEEN fights: wounds persist until healed by
+   * resting at the tavern or drinking a potion. Undefined means unhurt (full) —
+   * the value is written after every combat and clamped to the character's
+   * computed max (see playerMaxHp in index.ts). Persisted with the save.
+   */
+  hp?: number;
 }
 
 // ─────────────────────────────────────────────

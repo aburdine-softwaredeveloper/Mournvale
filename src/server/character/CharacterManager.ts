@@ -27,13 +27,20 @@ import type { CharacterData } from "../../types/game";
 const SPEAKER = "Aldric the Barkeep";
 
 const CLASS_CHOICES: DialogueChoice[] = [
-  { label: "[+] Knight",  value: "Knight"  },
-  { label: "[*] Healer",  value: "Healer"  },
-  { label: "[X] Warrior", value: "Warrior" },
-  { label: "[o] Monk",    value: "Monk"    },
-  { label: "[~] Mage",    value: "Mage"    },
-  { label: "[/] Thief",   value: "Thief"   },
-  { label: "[>] Archer",  value: "Archer"  },
+  { label: "[+] Knight",  value: "Knight",
+    description: "Plate-armored bulwark. Longsword, the town's best armor, and a stunning Shield Bash." },
+  { label: "[*] Healer",  value: "Healer",
+    description: "Keeper of the wounded. Mends allies with Healing Word and burns foes with Sacred Flame." },
+  { label: "[X] Warrior", value: "Warrior",
+    description: "Front-line brawler. Battleaxe, heavy blows, Reckless Attack, and Second Wind to shrug off harm." },
+  { label: "[o] Monk",    value: "Monk",
+    description: "Swift unarmed fighter. Stunning Strike and a patient guard that turns blows aside." },
+  { label: "[~] Mage",    value: "Mage",
+    description: "Scholar of the arcane. Frail, but strikes from afar with Magic Missile and Fire Bolt." },
+  { label: "[/] Thief",   value: "Thief",
+    description: "Shadow and sleight. Deadly Sneak Attack when a friend distracts the mark." },
+  { label: "[>] Archer",  value: "Archer",
+    description: "Eyes like a hawk. A longbow that kills from six tiles away, far from harm's reach." },
 ];
 
 const GENDER_CHOICES: DialogueChoice[] = [

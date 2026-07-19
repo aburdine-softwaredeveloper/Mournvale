@@ -355,6 +355,10 @@ class MournvaleClient {
         this.game.updateRoom(msg);
         break;
 
+      case "hp_update":
+        this.game.updateHp(msg.payload.hp, msg.payload.maxHp);
+        break;
+
       case "chat":
         this.game.log(`${msg.payload.speaker}: ${msg.payload.message}`, "chat");
         break;
@@ -494,8 +498,11 @@ class MournvaleClient {
           },
           // onCombatEnd — hide overlay and return to the game screen
           (outcome) => {
-            const label = outcome === "players_win" ? "victorious" : "defeated";
-            this.game.log(`Combat ended — you were ${label}.`, "system");
+            const label =
+              outcome === "players_win" ? "Combat ended — you were victorious." :
+              outcome === "fled"        ? "You slipped away from the fight." :
+                                          "Combat ended — you were defeated.";
+            this.game.log(label, "system");
             this.combatScreen?.unmount();
             this.combatScreen   = null;
             this.activeCombatId = null;
