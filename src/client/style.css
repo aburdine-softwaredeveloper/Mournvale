@@ -691,8 +691,12 @@ html, body {
   width: 132px;
   height: 160px;
   image-rendering: pixelated;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  /* Light parchment fill so dark-caped portraits (mage, archer, …) read
+     clearly against the frame instead of vanishing into a dark backdrop. */
+  background:
+    radial-gradient(ellipse at 50% 28%, rgba(255,250,236,0.96), rgba(224,212,184,0.92) 72%),
+    var(--color-bg-panel);
+  border: 1px solid var(--color-border-gold);
 }
 
 .portrait-img svg {
@@ -825,7 +829,10 @@ html, body {
   width: 44px;
   height: 54px;
   flex-shrink: 0;
-  background: var(--color-bg);
+  /* Light parchment fill so dark-caped portraits read against the frame. */
+  background:
+    radial-gradient(ellipse at 50% 28%, rgba(255,250,236,0.92), rgba(224,212,184,0.88) 74%),
+    var(--color-bg-panel);
   border: var(--border-width) solid var(--color-border);
   image-rendering: pixelated;
 }
@@ -2138,15 +2145,79 @@ html, body {
 
 /* ── Talent tree panel ── */
 .talent-portrait {
-  width: 64px;
-  height: 64px;
+  /* Larger, portrait-aspect (152:184) frame. A light parchment fill with a
+     soft top highlight keeps the dark-caped figures legible against what was
+     a near-black backdrop. Click to open the full-size lightbox. */
+  width: 132px;
+  height: 160px;
   align-self: center;
-  border: var(--border-width) solid var(--color-border);
-  background: var(--color-bg);
-  image-rendering: pixelated;
+  border: var(--border-width) solid var(--color-border-gold);
+  border-radius: 4px;
+  background:
+    radial-gradient(ellipse at 50% 28%, rgba(255,250,236,0.96), rgba(224,212,184,0.92) 72%),
+    var(--color-bg-panel);
+  box-shadow: inset 0 0 14px rgba(95,62,30,0.20);
   overflow: hidden;
+  cursor: zoom-in;
+  transition: transform 100ms ease, box-shadow 100ms ease;
+}
+.talent-portrait:hover {
+  box-shadow: inset 0 0 14px rgba(95,62,30,0.20), 0 0 0 2px var(--color-border-light);
+  transform: scale(1.03);
 }
 .talent-portrait svg { width: 100%; height: 100%; display: block; }
+
+/* ── Portrait lightbox (click the skills-screen portrait to enlarge) ── */
+.portrait-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(16,11,6,0.82);
+  cursor: zoom-out;
+}
+.portrait-lightbox-figure {
+  position: relative;
+  height: min(72vh, 82vw * 184 / 152);
+  aspect-ratio: 152 / 184;
+  background:
+    radial-gradient(ellipse at 50% 26%, rgba(255,250,236,0.97), rgba(222,210,182,0.94) 74%),
+    var(--color-bg-panel);
+  border: 3px solid var(--color-border-gold);
+  border-radius: 8px;
+  box-shadow: inset 0 0 30px rgba(95,62,30,0.24), 0 16px 44px rgba(0,0,0,0.6);
+  padding: 14px;
+  cursor: default;
+}
+.portrait-lightbox-figure svg { width: 100%; height: 100%; display: block; }
+.portrait-lightbox-name {
+  font-family: var(--font-pixel);
+  font-size: 0.8em;
+  letter-spacing: 2px;
+  color: var(--color-text-gold);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+  cursor: default;
+}
+.portrait-lightbox-close {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--color-text-gold);
+  font-family: var(--font-pixel);
+  font-size: 1.1em;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  text-shadow: 0 1px 2px rgba(255,250,236,0.6);
+}
+.portrait-lightbox-close:hover { color: var(--color-text-error); transform: scale(1.15); }
 .talent-hint {
   font-size: 0.58em;
   color: var(--color-text-dim);

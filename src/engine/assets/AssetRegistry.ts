@@ -156,16 +156,23 @@ export class AssetRegistry {
    * Builds the runtime URL for a character portrait PNG. Portraits are
    * full-body sprites selected by (gender, hairColor, class):
    *   /assets/characters/portraits/{gender}_{color}_{class}.png
+   *
+   * Some classes ship a baked-in glasses variant whose spectacles are drawn
+   * directly on the art (aligned to that art's face). Pass `glasses: true`
+   * for those to get the `_glasses` file instead of the base portrait:
+   *   /assets/characters/portraits/{gender}_{color}_{class}_glasses.png
    */
   public portraitUrl(
     gender: string,
     hairColor: string,
-    characterClass: string
+    characterClass: string,
+    glasses = false
   ): string {
     const g = gender.toLowerCase();
     const c = hairColor.toLowerCase();
     const cls = characterClass.toLowerCase();
-    return `${this.basePath}/characters/portraits/${g}_${c}_${cls}.png`;
+    const suffix = glasses ? "_glasses" : "";
+    return `${this.basePath}/characters/portraits/${g}_${c}_${cls}${suffix}.png`;
   }
 
   /**
